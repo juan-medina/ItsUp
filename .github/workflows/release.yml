@@ -63,10 +63,17 @@ jobs:
       # windows-latest is not guaranteed to have .NET 10 preinstalled (or to keep it, once the
       # runner image rolls forward), so pin it explicitly rather than relying on whatever the
       # image happens to ship. goatcorp's own SamplePlugin template does the same.
+      #
+      # cache: true keys the NuGet global-packages cache on packages.lock.json's hash, so it is
+      # safe with --locked-mode restore below: any real dependency change produces a different
+      # key and restores fresh. It only searches the repo root by default, hence the explicit
+      # path — ItsUp/packages.lock.json, not one at the solution root.
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: ItsUp/packages.lock.json
 
       - name: Setup Dalamud
         shell: pwsh
