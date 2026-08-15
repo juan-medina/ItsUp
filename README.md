@@ -13,11 +13,11 @@ Raiding already has your attention on mechanics, so it's easy to lose track of a
 back mid-fight. This doesn't call your opener or your rotation — it just reminds you when
 something you've already used is up again. When to use it is still entirely up to you.
 
-<p align="center"><img src="docs/move-mode.png" alt="The panel showing several tracked icons, with the gold anchor marker" width="420"><br><i>Position the bar</i></p>
+<p align="center"><img src="docs/move-mode.png" alt="The panel showing several tracked icons, with the gold anchor marker"><br><i>Position the bar</i></p>
 
 
 
-<p align="center"><img src="docs/warming-icon.png" alt="A single dimmed icon with a countdown before it comes back" width="90"><br><i>A icon counts down just before an ability returns</i></p>
+<p align="center"><img src="docs/warming-icon.png" alt="A single dimmed icon with a countdown before it comes back"><br><i>A icon counts down just before an ability returns</i></p>
 
 ## Install
 
