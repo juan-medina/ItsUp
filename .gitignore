@@ -1,0 +1,44 @@
+# Other
+.*/
+
+# Build output
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+
+# NuGet (packages.lock.json is intentionally NOT here — it is meant to be committed;
+# see RestorePackagesWithLockFile in ItsUp.csproj)
+*.nupkg
+packages/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+
+# IDEs
+.idea/
+.vscode/
+*.user
+
+# worflows
+!.github/
+!.github/workflows/
+!.github/workflows/**
+
+# Python Env
+/.venv/
+

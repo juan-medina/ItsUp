@@ -1,0 +1,81 @@
+# Matches the style already in use across the codebase, not a generic default, so the analyzer
+# stays quiet on existing code instead of flagging it against a freshly invented ruleset.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.cs]
+indent_size = 4
+
+# System.* first, then everything else, alphabetically within each group.
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+# using directives above the namespace block (every file in this repo does this).
+csharp_using_directive_placement = outside_namespace:silent
+
+# Block-scoped `namespace ItsUp { ... }`, not file-scoped `namespace ItsUp;`.
+csharp_style_namespace_declarations = block_scoped:silent
+
+# Allman: opening brace on its own line, everywhere.
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+
+# var when the right-hand side already makes the type obvious (`var am = ActionManager.Instance();`).
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+
+# One-line members stay expression-bodied (`private void OnUpdate(...) => _tracker.Update();`).
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_expression_bodied_accessors = true:suggestion
+
+# No `this.` qualification.
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+
+# Private const fields stay PascalCase (CooldownWindow.IconSize, ColourReady, ...) — this rule
+# is listed first because Roslyn applies the first matching naming rule, and const fields would
+# otherwise also match the broader private-field rule below.
+dotnet_naming_rule.private_const_fields_use_pascal_case.symbols = private_const_fields
+dotnet_naming_rule.private_const_fields_use_pascal_case.style = pascal_case
+dotnet_naming_rule.private_const_fields_use_pascal_case.severity = suggestion
+
+dotnet_naming_symbols.private_const_fields.applicable_kinds = field
+dotnet_naming_symbols.private_const_fields.applicable_accessibilities = private, internal
+dotnet_naming_symbols.private_const_fields.required_modifiers = const
+
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+
+# Every other private/internal field, readonly or not, static or instance, is _camelCase
+# (_tracker, _config, _unlocked, _jobsByCategory, ...).
+dotnet_naming_rule.private_fields_use_underscore_camel_case.symbols = private_fields
+dotnet_naming_rule.private_fields_use_underscore_camel_case.style = underscore_camel_case
+dotnet_naming_rule.private_fields_use_underscore_camel_case.severity = suggestion
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private, internal
+
+dotnet_naming_style.underscore_camel_case.capitalization = camel_case
+dotnet_naming_style.underscore_camel_case.required_prefix = _
+
+[*.{csproj,props,targets}]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.json]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false

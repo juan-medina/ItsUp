@@ -1,0 +1,121 @@
+name: Release
+
+# Run from the Actions tab (or `gh workflow run release.yml`) when you want to ship. There is no
+# tag-push trigger: the version lives in one place, ItsUp.csproj's <Version>, and this workflow
+# derives the tag from it instead of trusting a second, independently-typed copy to match.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from ItsUp.csproj
+        id: version
+        run: |
+          version=$(grep -oP '(?<=<Version>)[^<]+' ItsUp/ItsUp.csproj)
+          if [ -z "$version" ]; then
+            echo "::error::Could not read <Version> from ItsUp/ItsUp.csproj"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version"
+
+      - name: Fail if this version was already released
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag ${{ steps.version.outputs.version }} already exists. Bump <Version> in ItsUp/ItsUp.csproj before releasing."
+            exit 1
+          fi
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.version }}" -m "Release ${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
+
+  build-release:
+    name: Build and release
+    needs: prepare
+    runs-on: windows-latest
+
+    env:
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # windows-latest is not guaranteed to have .NET 10 preinstalled (or to keep it, once the
+      # runner image rolls forward), so pin it explicitly rather than relying on whatever the
+      # image happens to ship. goatcorp's own SamplePlugin template does the same.
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Dalamud
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile ./latest.zip
+          Expand-Archive -Path ./latest.zip -DestinationPath "$env:AppData\XIVLauncher\addon\Hooks\dev" -Force
+
+      - name: Restore project dependencies
+        run: dotnet restore ItsUp.sln --locked-mode --verbosity normal
+
+      - name: Build Release
+        run: dotnet build ItsUp.sln --no-restore --verbosity normal --configuration Release
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ItsUp-${{ needs.prepare.outputs.version }}
+          path: |
+            ItsUp/bin/x64/Release
+            !ItsUp/bin/x64/Release/ItsUp
+
+      # The SDK always names the package latest.zip; repo.json's download links need a stable,
+      # plugin-named asset instead, so it is copied under the name players' game clients look for.
+      - name: Rename package for release
+        run: Copy-Item -Path ItsUp/bin/x64/Release/ItsUp/latest.zip -Destination ItsUp/bin/x64/Release/ItsUp/ItsUp.zip
+
+      # base_repo.json keeps "0.0.0.1" as a literal placeholder in every field that has to track
+      # the released version — the version fields and, cleverly, inside the release download URLs
+      # too — so one regex replace produces a valid repo.json. JSON has no comment syntax, so that
+      # convention is documented in .agents/AGENTS.md instead of in the file itself.
+      - name: Write repo.json for the released version
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.prepare.outputs.version }}"
+          (Get-Content -Path ./base_repo.json -Raw) -replace '0\.0\.0\.1', $ver | Set-Content -Path ./repo.json
+
+      # actions/create-release and actions/upload-release-asset (what LMeter's workflow uses) are
+      # archived and unmaintained. softprops/action-gh-release does both in one actively-maintained
+      # step — and, uploading repo.json as a release asset alongside the plugin zip rather than
+      # committing it to main means this workflow never touches a branch at all: tag + release,
+      # nothing else, matching the sibling Godot project's release.yml.
+      - name: Create release and attach the plugin zip and repo.json
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.version }}
+          name: ItsUp ${{ needs.prepare.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            ItsUp/bin/x64/Release/ItsUp/ItsUp.zip
+            repo.json
+          fail_on_unmatched_files: true
