@@ -4,6 +4,7 @@
   "Punchline": "Yes. Still up. Press it.",
   "Description": "Reminds you when a cooldown you actually spent has come back. Nothing shows until you use something, so the panel starts empty and only nags you about what you owe yourself. /itsup to move the panel.",
   "ApplicableVersion": "any",
+  "RepoUrl": "https://github.com/juan-medina/ItsUp",
   "IconUrl": "https://raw.githubusercontent.com/juan-medina/ItsUp/main/ItsUp/icon.png",
   "Tags": [
     "combat",
