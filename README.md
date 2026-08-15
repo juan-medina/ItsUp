@@ -1,6 +1,10 @@
 # It's Up
 
-*Yes. Still up. Press it.*
+
+<p align="center"><img src="ItsUp/icon.png"></p>
+
+<p align="center"><i>Yes. Still up. Press it.</i></p>
+
 
 A cooldown reminder for FFXIV. It stays empty until you use something — then, once it's back up,
 its icon appears. Press it, and it's gone again.
@@ -9,11 +13,11 @@ Raiding already has your attention on mechanics, so it's easy to lose track of a
 back mid-fight. This doesn't call your opener or your rotation — it just reminds you when
 something you've already used is up again. When to use it is still entirely up to you.
 
-<img src="docs/move-mode.png" alt="The panel showing several tracked icons, with the gold anchor marker" width="420">
+<p align="center"><img src="docs/move-mode.png" alt="The panel showing several tracked icons, with the gold anchor marker" width="420"><br><i>Position the bar</i></p>
 
-A dimmed icon counts down just before an ability returns:
 
-<img src="docs/warming-icon.png" alt="A single dimmed icon with a countdown before it comes back" width="90">
+
+<p align="center"><img src="docs/warming-icon.png" alt="A single dimmed icon with a countdown before it comes back" width="90"><br><i>A icon counts down just before an ability returns</i></p>
 
 ## Install
 
@@ -34,5 +38,5 @@ Then install **It's Up** from `/xlplugins`.
 Everything else — filters, timing meanings, bar positioning — is explained in the settings
 window itself.
 
-<img src="docs/settings.png" alt="The settings window, showing tracked White Mage abilities with their heads-up and stays-up timings" width="560">
+<p align="center"><img src="docs/settings.png" alt="The settings window, showing tracked White Mage abilities with their heads-up and stays-up timings" width="560"></p>
 
