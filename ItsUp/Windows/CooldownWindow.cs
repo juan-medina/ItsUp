@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 
@@ -16,6 +17,28 @@ namespace ItsUp.Windows
         private const uint ColourDim = 0xA0000000;
         private const uint ColourPreview = 0xC0000000;
         private const uint ColourText = 0xFFFFFFFF;
+        private const uint ColourConsumeFlash = 0xFF33DD33;   // vivid green, ABGR — plays on a press only
+
+        // Warming: the dim overlay is a shrinking pie wedge (a cooldown wipe) rather than a flat rect,
+        // and the final second gets a brightness pulse that speeds up as it nears zero.
+        private const float PulseFinalWindowSeconds = 1f;
+        private const float PulseFreqMinHz = 2f;
+        private const float PulseFreqMaxHz = 9f;
+
+        // Ready: marching ants walked around the perimeter plus a slow breathing pulse on the border,
+        // so the reminder reads as "alive" in peripheral vision instead of a static outline.
+        private const float AntSpacingPx = 8f;
+        private const float AntRadius = 1.6f;
+        private const float AntSpeedPxPerSec = 24f;
+        private const float BreathPeriodSeconds = 1.6f;
+
+        // Ready: a one-shot scale "pop" plays at the instant the rising edge fires.
+        private const float PopDurationSeconds = 0.22f;
+        private const float PopScale = 1.17f;
+
+        // Consumed: shrink + fade always play; the green flash is press-only (see TrackedCooldown.ConsumedByPress).
+        private const float ConsumeShrinkTo = 0.7f;
+        private static readonly float ConsumeFadeSeconds = TrackedCooldown.ConsumeFadeMs / 1000f;
 
         private const ImGuiWindowFlags LockedFlags =
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoMove |
@@ -183,10 +206,14 @@ namespace ItsUp.Windows
                     new Vector2(right, midY),
                     ColourAnchor);
 
+            // Vertex order deliberately mirrors the other triangle's winding (base-bottom before
+            // base-top here) rather than mirroring its coordinates — same winding direction keeps
+            // Dear ImGui's AA fringe on the outside of both triangles equally, so they render as
+            // true mirror images instead of one being a hair softer/larger than the other.
             if (_config.Anchor is BarAnchor.Right or BarAnchor.Centre)
                 drawList.AddTriangleFilled(
-                    new Vector2(left + 6f, midY - 5f),
                     new Vector2(left + 6f, midY + 5f),
+                    new Vector2(left + 6f, midY - 5f),
                     new Vector2(left, midY),
                     ColourAnchor);
         }
@@ -241,33 +268,182 @@ namespace ItsUp.Windows
             };
         }
 
+        /// <summary>
+        /// Reserves a fixed <see cref="IconSize"/> footprint via <c>Dummy</c> and draws everything else
+        /// manually into the draw list, same pattern as <see cref="DrawSlotPreview"/> — so the pop and
+        /// consume animations can scale the icon without ever disturbing <c>SameLine</c> spacing.
+        /// </summary>
         private static void DrawEntry(ImDrawListPtr drawList, TrackedCooldown cd)
         {
             var pos = ImGui.GetCursorScreenPos();
             var size = new Vector2(IconSize, IconSize);
 
-            if (Services.TextureProvider.TryGetFromGameIcon(cd.IconId, out var texture) &&
-                texture.TryGetWrap(out var wrap, out _))
-                ImGui.Image(wrap.Handle, size);
-            else
-                ImGui.Dummy(size);
+            IDalamudTextureWrap? wrap = null;
+            if (Services.TextureProvider.TryGetFromGameIcon(cd.IconId, out var texture))
+                texture.TryGetWrap(out wrap, out _);
+
+            ImGui.Dummy(size);
 
             if (cd.IsReady)
             {
-                drawList.AddRect(pos, pos + size, ColourReady, 3f);
+                DrawScaledIcon(drawList, wrap, pos, size, PopScaleFor(cd.ReadySince), 1f);
+                DrawReadyBorder(drawList, pos, size);
                 return;
             }
 
             if (cd.IsWarming)
             {
-                drawList.AddRectFilled(pos, pos + size, ColourDim);
+                DrawScaledIcon(drawList, wrap, pos, size, 1f, 1f);
+                DrawWarmingWipe(drawList, pos, size, cd);
                 var label = Math.Ceiling(cd.SecondsLeft).ToString("0");
                 var textSize = ImGui.CalcTextSize(label);
                 drawList.AddText(pos + (size - textSize) / 2f, ColourText, label);
                 return;
             }
 
-            drawList.AddRectFilled(pos, pos + size, ColourPreview);
+            if (cd.IsConsuming)
+                DrawConsumed(drawList, wrap, pos, size, cd);
+        }
+
+        /// <summary>Replaces the colour's alpha byte, clamped to [0, 1].</summary>
+        private static uint WithAlpha(uint colour, float alpha01) =>
+            (colour & 0x00FFFFFF) | ((uint)(Math.Clamp(alpha01, 0f, 1f) * 255f) << 24);
+
+        /// <summary>
+        /// Draws the icon (or the same dark-rect fallback the bar always used when a texture wasn't
+        /// ready) centred inside <paramref name="size"/> at <paramref name="scale"/>, so scaling never
+        /// changes the reserved layout footprint.
+        /// </summary>
+        private static void DrawScaledIcon(
+            ImDrawListPtr drawList, IDalamudTextureWrap? wrap, Vector2 pos, Vector2 size, float scale, float alpha)
+        {
+            var scaledSize = size * scale;
+            var scaledPos = pos + (size - scaledSize) / 2f;
+
+            if (wrap != null)
+                drawList.AddImage(wrap.Handle, scaledPos, scaledPos + scaledSize, Vector2.Zero, Vector2.One,
+                    WithAlpha(0xFFFFFFFF, alpha));
+            else
+                drawList.AddRectFilled(scaledPos, scaledPos + scaledSize, WithAlpha(ColourPreview, alpha));
+        }
+
+        private static void DrawPieWedge(
+            ImDrawListPtr drawList, Vector2 centre, float radius, float startAngle, float endAngle, uint colour)
+        {
+            if (endAngle <= startAngle) return;
+
+            drawList.PathLineTo(centre);
+            drawList.PathArcTo(centre, radius, startAngle, endAngle, 32);
+            drawList.PathFillConvex(colour);
+        }
+
+        /// <summary>
+        /// An OmniCC-style cooldown wipe standing in for the old flat dim overlay. The icon is only ever
+        /// on screen for the <see cref="TrackedCooldown.WarnMs"/> window, so the wedge sweeps full-circle
+        /// down to nothing across exactly that span rather than needing the total recast time.
+        /// </summary>
+        private static void DrawWarmingWipe(ImDrawListPtr drawList, Vector2 pos, Vector2 size, TrackedCooldown cd)
+        {
+            var warnSeconds = cd.WarnMs / 1000f;
+            var fraction = warnSeconds > 0f ? Math.Clamp(cd.SecondsLeft / warnSeconds, 0f, 1f) : 0f;
+
+            var centre = pos + size / 2f;
+            var radius = size.X * 0.75f;              // overshoots the inscribed circle so the wedge covers the square's corners once clipped
+            var start = -MathF.PI / 2f;                // 12 o'clock
+            var end = start + fraction * MathF.Tau;
+
+            drawList.PushClipRect(pos, pos + size, true);
+            DrawPieWedge(drawList, centre, radius, start, end, ColourDim);
+
+            var brightness = WarmingPulseBrightness(cd.SecondsLeft);
+            if (brightness > 0f)
+                DrawPieWedge(drawList, centre, radius, start, end, WithAlpha(ColourText, brightness * 0.5f));
+
+            drawList.PopClipRect();
+        }
+
+        /// <summary>
+        /// 0 outside the final second. Inside it, the pulse both speeds up and brightens as it nears
+        /// zero — the "about to pop" cue asked for, kept to the last second so it marks the approach
+        /// rather than pulsing through the whole warm-up.
+        /// </summary>
+        private static float WarmingPulseBrightness(float secondsLeft)
+        {
+            if (secondsLeft > PulseFinalWindowSeconds || secondsLeft < 0f) return 0f;
+
+            var urgency = 1f - secondsLeft / PulseFinalWindowSeconds;
+            var freqHz = PulseFreqMinHz + (PulseFreqMaxHz - PulseFreqMinHz) * urgency;
+            var wave = (MathF.Sin((float)ImGui.GetTime() * freqHz * MathF.Tau) + 1f) * 0.5f;
+            return wave * urgency;
+        }
+
+        /// <summary>Walks the rectangle's perimeter clockwise from the top-left corner, <paramref name="d"/> px in.</summary>
+        private static Vector2 PerimeterPoint(Vector2 pos, Vector2 size, float d)
+        {
+            var perimeter = 2f * (size.X + size.Y);
+            d = ((d % perimeter) + perimeter) % perimeter;
+
+            if (d < size.X) return new Vector2(pos.X + d, pos.Y);
+            d -= size.X;
+            if (d < size.Y) return new Vector2(pos.X + size.X, pos.Y + d);
+            d -= size.Y;
+            if (d < size.X) return new Vector2(pos.X + size.X - d, pos.Y + size.Y);
+            d -= size.X;
+            return new Vector2(pos.X, pos.Y + size.Y - d);
+        }
+
+        /// <summary>Small dots marching around the border on a continuous loop — the "still up, come on" cue.</summary>
+        private static void DrawMarchingAnts(ImDrawListPtr drawList, Vector2 pos, Vector2 size, float alpha)
+        {
+            var perimeter = 2f * (size.X + size.Y);
+            var offset = (float)(ImGui.GetTime() * AntSpeedPxPerSec) % AntSpacingPx;
+            var colour = WithAlpha(ColourReady, alpha);
+
+            for (var d = offset; d < perimeter; d += AntSpacingPx)
+                drawList.AddCircleFilled(PerimeterPoint(pos, size, d), AntRadius, colour, 8);
+        }
+
+        /// <summary>Breathing gold border plus marching ants, both riding the same slow pulse.</summary>
+        private static void DrawReadyBorder(ImDrawListPtr drawList, Vector2 pos, Vector2 size)
+        {
+            var breath = (MathF.Sin((float)ImGui.GetTime() * MathF.Tau / BreathPeriodSeconds) + 1f) * 0.5f;
+
+            drawList.AddRect(pos, pos + size, WithAlpha(ColourReady, 0.55f + 0.45f * breath), 3f,
+                ImDrawFlags.None, 1.5f + breath);
+            DrawMarchingAnts(drawList, pos, size, 0.7f + 0.3f * breath);
+        }
+
+        /// <summary>
+        /// One sine bump driven by wall-clock time since the rising edge fired — grows then eases back to
+        /// 1, marking the moment it became ready rather than pulsing for as long as it stays ready.
+        /// </summary>
+        private static float PopScaleFor(DateTime? readySince)
+        {
+            if (readySince is not { } since) return 1f;
+
+            var t = (float)(DateTime.UtcNow - since).TotalSeconds / PopDurationSeconds;
+            if (t is < 0f or >= 1f) return 1f;
+
+            return 1f + (PopScale - 1f) * MathF.Sin(t * MathF.PI);
+        }
+
+        private static float EaseOutCubic(float t) => 1f - MathF.Pow(1f - t, 3f);
+
+        /// <summary>
+        /// Plays for <see cref="TrackedCooldown.ConsumeFadeMs"/> after the reminder clears: a shrink+fade
+        /// every time, plus a green "got it" flash only when it cleared because you pressed it — a
+        /// linger timeout fades out plainly so ignoring it never looks the same as using it.
+        /// </summary>
+        private static void DrawConsumed(
+            ImDrawListPtr drawList, IDalamudTextureWrap? wrap, Vector2 pos, Vector2 size, TrackedCooldown cd)
+        {
+            var t = Math.Clamp((float)(DateTime.UtcNow - cd.ConsumedSince!.Value).TotalSeconds / ConsumeFadeSeconds, 0f, 1f);
+            var eased = EaseOutCubic(t);
+
+            DrawScaledIcon(drawList, wrap, pos, size, 1f - (1f - ConsumeShrinkTo) * eased, 1f - eased);
+
+            if (cd.ConsumedByPress)
+                drawList.AddRectFilled(pos, pos + size, WithAlpha(ColourConsumeFlash, (1f - eased) * 0.6f), 3f);
         }
     }
 }

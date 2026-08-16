@@ -25,12 +25,22 @@ namespace ItsUp
         public float SecondsLeft;
         public DateTime? ReadySince;
 
+        /// <summary>How long the consumed-state animation (flash/shrink/fade) plays for.</summary>
+        public const int ConsumeFadeMs = 280;
+
+        /// <summary>Set the instant a falling edge or a linger timeout clears the reminder.</summary>
+        public DateTime? ConsumedSince;
+
+        /// <summary>True = cleared because you pressed it. False = cleared because <see cref="LingerMs"/> gave up.</summary>
+        public bool ConsumedByPress;
+
         /// <summary>Whether the job you are currently on can press this at all.</summary>
         public bool Usable;
 
         public bool IsReady => ReadySince != null;
         public bool IsWarming => !Available && SecondsLeft > 0f && SecondsLeft <= WarnMs / 1000f;
-        public bool Visible => Usable && (IsReady || IsWarming);
+        public bool IsConsuming => ConsumedSince != null;
+        public bool Visible => Usable && (IsReady || IsWarming || IsConsuming);
     }
 
     public class CooldownTracker
@@ -92,9 +102,15 @@ namespace ItsUp
                 if (!cd.Usable)
                 {
                     cd.ReadySince = null;
+                    cd.ConsumedSince = null;   // a job swap shouldn't leave a stale flash behind
                     cd.Available = cd.WasAvailable = true;
                     continue;
                 }
+
+                // Expire an in-flight consumed-state animation once it has played out.
+                if (cd.ConsumedSince is { } consumedAt &&
+                    (now - consumedAt).TotalMilliseconds > TrackedCooldown.ConsumeFadeMs)
+                    cd.ConsumedSince = null;
 
                 // Deliberately not GetActionStatus: it also reports "unusable" while you are casting,
                 // which would fire a fresh reveal on every single hard cast.
@@ -112,16 +128,27 @@ namespace ItsUp
                 if (!inCombat)
                 {
                     cd.ReadySince = null;
+                    cd.ConsumedSince = null;   // rebaselining wipes edge state uniformly, no fight-end flash
                     cd.Available = cd.WasAvailable = available;
                     continue;
                 }
 
                 if (!cd.WasAvailable && available) cd.ReadySince = now;   // it came back
-                if (cd.WasAvailable && !available) cd.ReadySince = null;  // you pressed it
+
+                if (cd.WasAvailable && !available)                        // you pressed it
+                {
+                    cd.ReadySince = null;
+                    cd.ConsumedSince = now;
+                    cd.ConsumedByPress = true;
+                }
 
                 if (cd.ReadySince is { } since && cd.LingerMs > 0 &&
                     (now - since).TotalMilliseconds > cd.LingerMs)
+                {
                     cd.ReadySince = null;                                 // nagged long enough
+                    cd.ConsumedSince = now;
+                    cd.ConsumedByPress = false;
+                }
 
                 cd.Available = cd.WasAvailable = available;
             }

@@ -17,7 +17,7 @@ something you've already used is up again. When to use it is still entirely up t
 
 
 
-<p align="center"><img src="docs/warming-icon.png" alt="A single dimmed icon with a countdown before it comes back"><br><i>A icon counts down just before an ability returns</i></p>
+<p align="center"><img src="docs/warming-icon.gif" alt="Cooldown animation showing in a action"><br><i>A icon counts down just before an ability returns</i></p>
 
 ## Install
 
