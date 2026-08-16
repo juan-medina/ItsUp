@@ -25,8 +25,6 @@ namespace ItsUp
             Services.Initialize(pluginInterface);
             _pluginInterface = pluginInterface;
 
-            JobEligibility.Build();
-
             var existing = pluginInterface.GetPluginConfig() as Configuration;
             _config = existing ?? new Configuration();
             _config.Initialize(pluginInterface);

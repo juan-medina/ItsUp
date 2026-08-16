@@ -38,5 +38,5 @@ Then install **It's Up** from `/xlplugins`.
 Everything else — filters, timing meanings, bar positioning — is explained in the settings
 window itself.
 
-<p align="center"><img src="docs/settings.png" alt="The settings window, showing tracked White Mage abilities with their heads-up and stays-up timings" width="560"></p>
+<p align="center"><img src="docs/settings.png" alt="The settings window, showing tracked White Mage abilities with their heads-up and stays-up timings"></p>
 

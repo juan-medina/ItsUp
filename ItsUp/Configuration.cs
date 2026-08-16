@@ -18,10 +18,13 @@ namespace ItsUp
     public class AbilitySettings
     {
         /// <summary>How long before it comes back the dim warning appears.</summary>
-        public int WarnMs { get; set; } = 3000;
+        public int WarnMs { get; set; }
 
-        /// <summary>How long the reminder nags once it is back. 0 means until you press it.</summary>
+        /// <summary>How long the reminder nags once it is back. Ignored when <see cref="LingerForever"/> is set.</summary>
         public int LingerMs { get; set; }
+
+        /// <summary>True = ignore <see cref="LingerMs"/> and nag until the ability is pressed.</summary>
+        public bool LingerForever { get; set; }
     }
 
     [Serializable]
@@ -30,11 +33,13 @@ namespace ItsUp
         public int Version { get; set; } = 1;
 
         /// <summary>Seeded into a new entry when an ability is first ticked in the picker.</summary>
-        public int DefaultWarnMs { get; set; } = 3000;
+        public int DefaultWarnMs { get; set; } = 5000;
 
         public int DefaultLingerMs { get; set; }
 
-        public Dictionary<uint, AbilitySettings> Tracked { get; set; } = new();
+        public bool DefaultLingerForever { get; set; } = true;
+
+        public Dictionary<uint, AbilitySettings> Tracked { get; set; } = [];
 
         /// <summary>
         /// The pinned point, in screen pixels, and which edge of the bar sits on it. Position is

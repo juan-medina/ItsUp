@@ -15,10 +15,10 @@ namespace ItsUp
 
         public int WarnMs => Settings.WarnMs;
         public int LingerMs => Settings.LingerMs;
+        public bool LingerForever => Settings.LingerForever;
 
         public string Name = string.Empty;
         public uint IconId;
-        public uint ClassJobCategoryId;
 
         public bool Available;
         public bool WasAvailable = true;
@@ -34,13 +34,10 @@ namespace ItsUp
         /// <summary>True = cleared because you pressed it. False = cleared because <see cref="LingerMs"/> gave up.</summary>
         public bool ConsumedByPress;
 
-        /// <summary>Whether the job you are currently on can press this at all.</summary>
-        public bool Usable;
-
         public bool IsReady => ReadySince != null;
         public bool IsWarming => !Available && SecondsLeft > 0f && SecondsLeft <= WarnMs / 1000f;
         public bool IsConsuming => ConsumedSince != null;
-        public bool Visible => Usable && (IsReady || IsWarming || IsConsuming);
+        public bool Visible => IsReady || IsWarming || IsConsuming;
     }
 
     public class CooldownTracker
@@ -72,7 +69,6 @@ namespace ItsUp
                 {
                     cd.Name = row.Name.ToString();
                     cd.IconId = row.Icon;
-                    cd.ClassJobCategoryId = row.ClassJobCategory.RowId;
                 }
 
                 Services.Logger.Information($"Tracking {actionId} = \"{cd.Name}\" (icon {cd.IconId})");
@@ -91,22 +87,10 @@ namespace ItsUp
             if (am == null || player == null) return;
 
             var inCombat = Services.Condition[ConditionFlag.InCombat];
-            var jobId = player.ClassJob.RowId;
             var now = DateTime.UtcNow;
 
             foreach (var cd in _tracked)
             {
-                // Abilities belonging to another job never fire an edge anyway, but gating here keeps
-                // them out of the panel and out of move mode's preview.
-                cd.Usable = JobEligibility.CanUse(cd.ClassJobCategoryId, jobId);
-                if (!cd.Usable)
-                {
-                    cd.ReadySince = null;
-                    cd.ConsumedSince = null;   // a job swap shouldn't leave a stale flash behind
-                    cd.Available = cd.WasAvailable = true;
-                    continue;
-                }
-
                 // Expire an in-flight consumed-state animation once it has played out.
                 if (cd.ConsumedSince is { } consumedAt &&
                     (now - consumedAt).TotalMilliseconds > TrackedCooldown.ConsumeFadeMs)
@@ -142,7 +126,7 @@ namespace ItsUp
                     cd.ConsumedByPress = true;
                 }
 
-                if (cd.ReadySince is { } since && cd.LingerMs > 0 &&
+                if (!cd.LingerForever && cd.ReadySince is { } since &&
                     (now - since).TotalMilliseconds > cd.LingerMs)
                 {
                     cd.ReadySince = null;                                 // nagged long enough

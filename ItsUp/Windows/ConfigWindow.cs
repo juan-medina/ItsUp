@@ -22,6 +22,11 @@ namespace ItsUp.Windows
 
         private enum View { Role, Job }
 
+        /// <summary>Seeded into "visible" when switching from "until pressed" to "for" leaves it at
+        /// a meaningless 0. Matches <see cref="Configuration.DefaultWarnMs"/> so both defaults agree
+        /// on "5s" as the plugin's one opinionated number.</summary>
+        private const int FallbackLingerMs = 5000;
+
         private readonly Configuration _config;
         private readonly CooldownTracker _tracker;
         private readonly CooldownWindow _panel;
@@ -141,15 +146,20 @@ namespace ItsUp.Windows
             if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
 
             ImGui.SameLine();
-            ImGui.TextUnformatted("stays up");
+            ImGui.TextUnformatted("visible");
             ImGui.SameLine();
             var linger = _config.DefaultLingerMs;
-            if (DrawSecondsInput("##defaultlinger", ref linger)) _config.DefaultLingerMs = linger;
-            if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
+            var lingerForever = _config.DefaultLingerForever;
+            if (DrawLingerInput("defaultlinger", ref linger, ref lingerForever, out var commitLinger))
+            {
+                _config.DefaultLingerMs = linger;
+                _config.DefaultLingerForever = lingerForever;
+            }
+            if (commitLinger) _config.Save();
 
-            // Spelling the current values out as a sentence is how "0 = until you press it" gets
-            // taught, rather than leaving it buried in a tooltip.
-            TextMuted(Describe(_config.DefaultWarnMs, _config.DefaultLingerMs));
+            // Spelling the current values out as a sentence reinforces what the checkbox above
+            // just set, rather than leaving it as a number nobody can interpret at a glance.
+            TextMuted(Describe(_config.DefaultWarnMs, _config.DefaultLingerMs, _config.DefaultLingerForever));
 
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted("Bar anchor");
@@ -169,19 +179,19 @@ namespace ItsUp.Windows
             ImGui.SameLine();
             if (ImGui.Button(_panel.Unlocked ? "Lock panel" : "Move panel"))
                 _panel.ToggleLock();
-            Tooltip("Unlocked, the panel gains a background you can drag and previews every icon this\n"
-                    + "job tracks. The gold marker is the point that stays put. Same as /itsup.");
+            Tooltip("Unlocked, drag the panel to reposition it. The gold marker is the point that\n"
+                    + "stays put. Same as /itsup.");
         }
 
-        private static string Describe(int warnMs, int lingerMs)
+        private static string Describe(int warnMs, int lingerMs, bool lingerForever)
         {
             var warn = warnMs > 0
                 ? $"A dimmed countdown appears {Seconds(warnMs)}s before it comes back"
                 : "No countdown before it comes back";
 
-            var linger = lingerMs > 0
-                ? $"the reminder clears itself {Seconds(lingerMs)}s later."
-                : "the reminder stays until you press it.";
+            var linger = lingerForever
+                ? "the reminder stays until you press it."
+                : $"the reminder clears itself {Seconds(lingerMs)}s later.";
 
             return $"{warn}, then {linger}";
         }
@@ -197,6 +207,41 @@ namespace ItsUp.Windows
 
             ms = Math.Max(0, (int)MathF.Round(seconds * 1000f));
             return true;
+        }
+
+        /// <summary>Mode dropdown ("for"/"until pressed") plus, only in "for" mode, the seconds
+        /// field. Both items are phrased as how long the reminder is *visible*, not when it hides —
+        /// "hides until pressed" reads backwards (sounds like it stays hidden till you press it), but
+        /// "visible until pressed" and "visible for 3.0s" both parse correctly paired with the same
+        /// leading word. A real bool drives which mode this is — not a 0 hiding in the number — and
+        /// the dropdown is the single control that owns which mode is active, rather than a checkbox
+        /// toggling a second control as a side effect. The field disappears entirely in "until
+        /// pressed" mode rather than leaving a value on screen that is no longer in effect; switching
+        /// back to "for" seeds a real duration in rather than leaving a meaningless 0.</summary>
+        private static bool DrawLingerInput(string id, ref int ms, ref bool forever, out bool commit)
+        {
+            commit = false;
+            var changed = false;
+
+            var mode = forever ? 1 : 0;
+            ImGui.SetNextItemWidth(120 * ImGuiHelpers.GlobalScale);
+            if (ImGui.Combo($"##{id}mode", ref mode, "for\0until pressed\0"))
+            {
+                forever = mode == 1;
+                if (!forever && ms <= 0) ms = FallbackLingerMs;
+                changed = true;
+                commit = true;
+            }
+            Tooltip("\"Until pressed\" keeps it visible and nagging until you actually press it.");
+
+            if (!forever)
+            {
+                ImGui.SameLine();
+                if (DrawSecondsInput($"##{id}", ref ms)) changed = true;
+                if (ImGui.IsItemDeactivatedAfterEdit()) commit = true;
+            }
+
+            return changed;
         }
 
         private void DrawSidebar()
@@ -238,14 +283,14 @@ namespace ItsUp.Windows
             ImGui.TableSetupColumn("##track", ImGuiTableColumnFlags.WidthFixed);
             ImGui.TableSetupColumn("Ability", ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn("Heads-up", ImGuiTableColumnFlags.WidthFixed, 78 * scale);
-            ImGui.TableSetupColumn("Stays up", ImGuiTableColumnFlags.WidthFixed, 78 * scale);
+            ImGui.TableSetupColumn("Visible", ImGuiTableColumnFlags.WidthFixed, 220 * scale);
 
             // Built by hand rather than TableHeadersRow() so the two timing columns can carry tooltips.
             ImGui.TableNextRow(ImGuiTableRowFlags.Headers);
             DrawHeader(0, "##track", null);
             DrawHeader(1, "Ability", null);
             DrawHeader(2, "Heads-up", "How long before the ability comes back the dimmed countdown icon appears.\n0 s = no countdown, it just shows up when it is ready.");
-            DrawHeader(3, "Stays up", "How long the reminder stays on screen once the ability is back.\n0 s = it nags until you press it.");
+            DrawHeader(3, "Visible", "How long the reminder stays on screen once the ability is back.\nPick \"until pressed\" to nag instead, until you actually press it.");
 
             foreach (var actionId in ids)
             {
@@ -262,7 +307,8 @@ namespace ItsUp.Windows
                         settings = new AbilitySettings
                         {
                             WarnMs = _config.DefaultWarnMs,
-                            LingerMs = _config.DefaultLingerMs
+                            LingerMs = _config.DefaultLingerMs,
+                            LingerForever = _config.DefaultLingerForever
                         };
                         _config.Tracked[actionId] = settings;
                     }
@@ -295,8 +341,13 @@ namespace ItsUp.Windows
                 if (settings != null)
                 {
                     var linger = settings.LingerMs;
-                    if (DrawSecondsInput("##linger", ref linger)) settings.LingerMs = linger;
-                    if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
+                    var lingerForever = settings.LingerForever;
+                    if (DrawLingerInput("linger", ref linger, ref lingerForever, out var commit))
+                    {
+                        settings.LingerMs = linger;
+                        settings.LingerForever = lingerForever;
+                    }
+                    if (commit) _config.Save();
                 }
             }
         }
