@@ -114,9 +114,26 @@ namespace ItsUp.Windows
         {
             if (_config.AnchorX != 0f || _config.AnchorY != 0f) return;
 
+            var (x, y) = ScreenCentre();
+            _config.AnchorX = x;
+            _config.AnchorY = y;
+            _config.Save();
+        }
+
+        private static (float X, float Y) ScreenCentre()
+        {
             var viewport = ImGuiHelpers.MainViewport;
-            _config.AnchorX = viewport.Pos.X + viewport.Size.X * 0.5f;
-            _config.AnchorY = viewport.Pos.Y + viewport.Size.Y * 0.72f;
+            return (viewport.Pos.X + viewport.Size.X * 0.5f, viewport.Pos.Y + viewport.Size.Y * 0.5f);
+        }
+
+        public void ResetPanel()
+        {
+            _config.IconSize = Configuration.DefaultIconSize;
+
+            var (x, y) = ScreenCentre();
+            _config.AnchorX = x;
+            _config.AnchorY = y;
+
             _config.Save();
         }
 

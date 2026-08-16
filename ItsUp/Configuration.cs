@@ -29,10 +29,12 @@ namespace ItsUp
         public bool DefaultLingerForever { get; set; } = true;
 
         public Dictionary<uint, AbilitySettings> Tracked { get; set; } = [];
+        public const float DefaultIconSize = 48f;
+
         public BarAnchor Anchor { get; set; } = BarAnchor.Centre;
         public float AnchorX { get; set; }
         public float AnchorY { get; set; }
-        public float IconSize { get; set; } = 48f;
+        public float IconSize { get; set; } = DefaultIconSize;
 
         [NonSerialized] private IDalamudPluginInterface _pluginInterface = null!;
         public void Initialize(IDalamudPluginInterface pluginInterface) => _pluginInterface = pluginInterface;

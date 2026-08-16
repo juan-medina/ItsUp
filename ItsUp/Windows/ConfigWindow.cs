@@ -154,15 +154,17 @@ namespace ItsUp.Windows
                 _config.Anchor = (BarAnchor)anchor;
                 _config.Save();
             }
-            Tooltip("Which point of the bar stays pinned as icons come and go.\n\n"
-                    + "Jobs track different numbers of abilities, and the bar is only as wide as what is\n"
-                    + "on screen, so without a pinned point it would shift every time the count changed.");
+            Tooltip("The panel stays pinned as icons flows from the anchor.");
 
             ImGui.SameLine();
             if (ImGui.Button(_panel.Unlocked ? "Lock panel" : "Move panel"))
                 _panel.ToggleLock();
-            Tooltip("Unlocked, drag the panel to reposition it. The gold marker is the point that\n"
-                    + "stays put. Same as /itsup.");
+            Tooltip(_panel.Unlocked ? "Unlocked, click to locked" : "Locked, click to unlock and move and drag the panel" + ".Same as /itsup.");
+
+            ImGui.SameLine();
+            if (ImGui.Button("Reset panel"))
+                _panel.ResetPanel();
+            Tooltip("Restores the default icon size and position.");
         }
 
         private static string Describe(int warnMs, int lingerMs, bool lingerForever)
@@ -204,7 +206,7 @@ namespace ItsUp.Windows
                 changed = true;
                 commit = true;
             }
-            Tooltip("\"Until pressed\" keeps it visible and nagging until you actually press it.");
+            Tooltip("\"Until pressed\" keeps it visible until you press it again.");
 
             if (!forever)
             {
@@ -259,8 +261,8 @@ namespace ItsUp.Windows
             ImGui.TableNextRow(ImGuiTableRowFlags.Headers);
             DrawHeader(0, "##track", null);
             DrawHeader(1, "Ability", null);
-            DrawHeader(2, "Heads-up", "How long before the ability comes back the dimmed countdown icon appears.\n0 s = no countdown, it just shows up when it is ready.");
-            DrawHeader(3, "Visible", "How long the reminder stays on screen once the ability is back.\nPick \"until pressed\" to nag instead, until you actually press it.");
+            DrawHeader(2, "Heads-up", "How long before the ability will show.");
+            DrawHeader(3, "Visible", "How long the reminder stays on screen.");
 
             foreach (var actionId in ids)
             {
