@@ -14,18 +14,7 @@ namespace ItsUp.Windows
 {
     public class ConfigWindow : Window
     {
-        /// <summary>Proc-gated GCDs the eligibility filter misses. 33 is Red Mage.</summary>
-        private static readonly Dictionary<uint, uint[]> JobActionWhitelist = new()
-        {
-            { 33, [7444, 7445, 37018, 37023, 37024, 37025, 37026, 37027, 37028] },
-        };
-
         private enum View { Role, Job }
-
-        /// <summary>Seeded into "visible" when switching from "until pressed" to "for" leaves it at
-        /// a meaningless 0. Matches <see cref="Configuration.DefaultWarnMs"/> so both defaults agree
-        /// on "5s" as the plugin's one opinionated number.</summary>
-        private const int FallbackLingerMs = 5000;
 
         private readonly Configuration _config;
         private readonly CooldownTracker _tracker;
@@ -38,11 +27,14 @@ namespace ItsUp.Windows
         private readonly List<uint> _roleActionIds;
         private readonly List<ClassJob> _jobs;
 
+        private const int ActionType = 4;
+        private const int IsleSprint = 29581;
+
         private View _view = View.Role;
         private uint _selectedJobId;
 
         public ConfigWindow(Configuration config, CooldownTracker tracker, CooldownWindow panel)
-            : base("It's Up — Settings##itsupconfig", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
+            : base("It's Up — Settings##its#up#config", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
         {
             _config = config;
             _tracker = tracker;
@@ -56,56 +48,48 @@ namespace ItsUp.Windows
                 MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
             };
 
-            // Everything below is sheet data that never changes, so it is built once here rather
-            // than re-filtered every frame.
+            // built once here rather in every frame.
             var allActions = Services.DataManager.GetExcelSheet<Action>()!.ToList();
             _actionNames = allActions.ToFrozenDictionary(a => a.RowId, a => a.Name.ToString());
             _actionIcons = allActions.ToFrozenDictionary(a => a.RowId, a => (uint)a.Icon);
 
-            _jobs = Services.DataManager.GetExcelSheet<ClassJob>()!
+            _jobs = [.. Services.DataManager.GetExcelSheet<ClassJob>()!
                 .Where(j => j.Role > 0 && j.ItemSoulCrystal.Value.RowId > 0)
-                .OrderBy(j => j.Name.ToString(), StringComparer.Ordinal)
-                .ToList();
+                .OrderBy(j => j.Name.ToString(), StringComparer.Ordinal)];
 
             _jobAbbreviations = _jobs.ToFrozenDictionary(j => j.RowId, j => j.Abbreviation.ToString());
 
             var byJob = new Dictionary<uint, List<uint>>();
             foreach (var job in _jobs)
             {
-                // The recast filter is what keeps 2.5s GCD spells out of the list — without it the
-                // panel would flicker on every cast.
-                var ids = allActions
+                // Get non-pvp player actions for that job with a cd bigger than 10s
+                var jobActionIds = allActions
                     .Where(a => !a.IsPvP
                                 && (a.ClassJob.RowId == job.RowId || a.ClassJob.RowId == job.ClassJobParent.RowId)
                                 && a.IsPlayerAction
-                                && (a.ActionCategory.RowId == 4 || a.Recast100ms > 100)
-                                && a.RowId != 29581)
-                    .Select(a => a.RowId)
-                    .ToList();
+                                && (a.ActionCategory.RowId == ActionType || a.Recast100ms > 100))
+                    .Select(a => a.RowId);
 
-                if (JobActionWhitelist.TryGetValue(job.RowId, out var whitelist))
-                    ids.AddRange(whitelist.Where(id => !ids.Contains(id) && _actionNames.ContainsKey(id)));
+                // remove island sprint
+                var ids = jobActionIds.Where(id => id != IsleSprint).ToList();
 
                 ids.Sort(CompareByName);
                 byJob[job.RowId] = ids;
             }
             _jobActionIds = byJob.ToFrozenDictionary();
 
-            _roleActionIds = allActions
+            _roleActionIds = [.. allActions
                 .Where(a => a.IsRoleAction && a.ClassJobLevel != 0)
-                .Select(a => a.RowId)
-                .ToList();
+                .Select(a => a.RowId)];
             _roleActionIds.Sort(CompareByName);
         }
 
         private int CompareByName(uint lhs, uint rhs) =>
             string.Compare(NameOf(lhs), NameOf(rhs), StringComparison.Ordinal);
 
-        /// <summary>A saved id can outlive its sheet row. Show it anyway, so it can be unticked.</summary>
         private string NameOf(uint actionId) =>
             _actionNames.TryGetValue(actionId, out var name) && name.Length > 0 ? name : $"#{actionId}";
 
-        /// <summary>Open on the job you are actually playing rather than an arbitrary first entry.</summary>
         private void SelectCurrentJob()
         {
             var jobId = Services.ObjectTable.LocalPlayer?.ClassJob.RowId ?? 0;
@@ -142,7 +126,7 @@ namespace ItsUp.Windows
             ImGui.TextUnformatted("heads-up");
             ImGui.SameLine();
             var warn = _config.DefaultWarnMs;
-            if (DrawSecondsInput("##defaultwarn", ref warn)) _config.DefaultWarnMs = warn;
+            if (DrawSecondsInput("##default#warn", ref warn)) _config.DefaultWarnMs = warn;
             if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
 
             ImGui.SameLine();
@@ -150,15 +134,13 @@ namespace ItsUp.Windows
             ImGui.SameLine();
             var linger = _config.DefaultLingerMs;
             var lingerForever = _config.DefaultLingerForever;
-            if (DrawLingerInput("defaultlinger", ref linger, ref lingerForever, out var commitLinger))
+            if (DrawLingerInput("default#linger", ref linger, ref lingerForever, _config.DefaultLingerMs, out var commitLinger))
             {
                 _config.DefaultLingerMs = linger;
                 _config.DefaultLingerForever = lingerForever;
             }
             if (commitLinger) _config.Save();
 
-            // Spelling the current values out as a sentence reinforces what the checkbox above
-            // just set, rather than leaving it as a number nobody can interpret at a glance.
             TextMuted(Describe(_config.DefaultWarnMs, _config.DefaultLingerMs, _config.DefaultLingerForever));
 
             ImGui.AlignTextToFramePadding();
@@ -198,7 +180,6 @@ namespace ItsUp.Windows
 
         private static string Seconds(int ms) => (ms / 1000f).ToString("0.#");
 
-        /// <summary>Timings are stored in ms, but nobody reads cooldowns in ms, so the UI is seconds.</summary>
         private static bool DrawSecondsInput(string label, ref int ms)
         {
             var seconds = ms / 1000f;
@@ -209,16 +190,7 @@ namespace ItsUp.Windows
             return true;
         }
 
-        /// <summary>Mode dropdown ("for"/"until pressed") plus, only in "for" mode, the seconds
-        /// field. Both items are phrased as how long the reminder is *visible*, not when it hides —
-        /// "hides until pressed" reads backwards (sounds like it stays hidden till you press it), but
-        /// "visible until pressed" and "visible for 3.0s" both parse correctly paired with the same
-        /// leading word. A real bool drives which mode this is — not a 0 hiding in the number — and
-        /// the dropdown is the single control that owns which mode is active, rather than a checkbox
-        /// toggling a second control as a side effect. The field disappears entirely in "until
-        /// pressed" mode rather than leaving a value on screen that is no longer in effect; switching
-        /// back to "for" seeds a real duration in rather than leaving a meaningless 0.</summary>
-        private static bool DrawLingerInput(string id, ref int ms, ref bool forever, out bool commit)
+        private static bool DrawLingerInput(string id, ref int ms, ref bool forever, int fallbackMs, out bool commit)
         {
             commit = false;
             var changed = false;
@@ -228,7 +200,7 @@ namespace ItsUp.Windows
             if (ImGui.Combo($"##{id}mode", ref mode, "for\0until pressed\0"))
             {
                 forever = mode == 1;
-                if (!forever && ms <= 0) ms = FallbackLingerMs;
+                if (!forever && ms <= 0) ms = fallbackMs;
                 changed = true;
                 commit = true;
             }
@@ -246,8 +218,6 @@ namespace ItsUp.Windows
 
         private void DrawSidebar()
         {
-            // The count is what replaces the old flat "Tracked" list: you can still see at a glance
-            // which jobs are set up, without a list that grows past managing.
             if (ImGui.Selectable(SidebarLabel("Role", _roleActionIds), _view == View.Role))
                 _view = View.Role;
 
@@ -285,7 +255,7 @@ namespace ItsUp.Windows
             ImGui.TableSetupColumn("Heads-up", ImGuiTableColumnFlags.WidthFixed, 78 * scale);
             ImGui.TableSetupColumn("Visible", ImGuiTableColumnFlags.WidthFixed, 220 * scale);
 
-            // Built by hand rather than TableHeadersRow() so the two timing columns can carry tooltips.
+
             ImGui.TableNextRow(ImGuiTableRowFlags.Headers);
             DrawHeader(0, "##track", null);
             DrawHeader(1, "Ability", null);
@@ -307,7 +277,7 @@ namespace ItsUp.Windows
                         settings = new AbilitySettings
                         {
                             WarnMs = _config.DefaultWarnMs,
-                            LingerMs = _config.DefaultLingerMs,
+                            LingerMs = _config.DefaultLingerForever ? 0 : _config.DefaultLingerMs,
                             LingerForever = _config.DefaultLingerForever
                         };
                         _config.Tracked[actionId] = settings;
@@ -342,7 +312,7 @@ namespace ItsUp.Windows
                 {
                     var linger = settings.LingerMs;
                     var lingerForever = settings.LingerForever;
-                    if (DrawLingerInput("linger", ref linger, ref lingerForever, out var commit))
+                    if (DrawLingerInput("linger", ref linger, ref lingerForever, _config.DefaultLingerMs, out var commit))
                     {
                         settings.LingerMs = linger;
                         settings.LingerForever = lingerForever;
@@ -375,10 +345,6 @@ namespace ItsUp.Windows
             if (ImGui.IsItemHovered()) ImGui.SetTooltip(text);
         }
 
-        /// <summary>
-        /// Secondary text that still has to be readable. Deliberately not <c>ImGui.TextDisabled</c>:
-        /// the theme's disabled colour is faint enough to be illegible against the game background.
-        /// </summary>
         private static void TextMuted(string text)
         {
             using (ImRaii.PushColor(ImGuiCol.Text, ImGui.GetColorU32(ImGuiCol.Text, 0.75f)))

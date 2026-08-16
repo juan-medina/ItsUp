@@ -10,7 +10,6 @@ namespace ItsUp
     {
         public required uint ActionId { get; init; }
 
-        /// <summary>Live reference into the config, so editing a timing takes effect without a resync.</summary>
         public required AbilitySettings Settings { get; init; }
 
         public int WarnMs => Settings.WarnMs;
@@ -21,48 +20,39 @@ namespace ItsUp
         public uint IconId;
 
         public bool Available;
-        public bool WasAvailable = true;
+
         public float SecondsLeft;
         public DateTime? ReadySince;
 
-        /// <summary>How long the consumed-state animation (flash/shrink/fade) plays for.</summary>
-        public const int ConsumeFadeMs = 280;
+        public const int PressedFadeDuration = 280;
 
-        /// <summary>Set the instant a falling edge or a linger timeout clears the reminder.</summary>
-        public DateTime? ConsumedSince;
-
-        /// <summary>True = cleared because you pressed it. False = cleared because <see cref="LingerMs"/> gave up.</summary>
-        public bool ConsumedByPress;
+        public DateTime? PressedSince;
+        public bool IsPressed;
 
         public bool IsReady => ReadySince != null;
         public bool IsWarming => !Available && SecondsLeft > 0f && SecondsLeft <= WarnMs / 1000f;
-        public bool IsConsuming => ConsumedSince != null;
-        public bool Visible => IsReady || IsWarming || IsConsuming;
+        public bool IsFading => PressedSince != null;
+        public bool Visible => IsReady || IsWarming || IsFading;
     }
 
-    public class CooldownTracker
+    public class CooldownTracker(Configuration config)
     {
-        private readonly Configuration _config;
-        private readonly List<TrackedCooldown> _tracked = new();
+        private readonly Configuration _config = config;
+        private readonly List<TrackedCooldown> _cooldowns = [];
 
-        public CooldownTracker(Configuration config) => _config = config;
+        public IReadOnlyList<TrackedCooldown> Cooldowns => _cooldowns;
 
-        public IReadOnlyList<TrackedCooldown> Tracked => _tracked;
-
-        /// <summary>
-        /// Bring the tracked list in line with the config. Entries that survive keep their edge state,
-        /// so ticking a box mid-fight does not disturb reminders already on screen.
-        /// New entries get their name and icon resolved, logged so a wrong id is obvious.
-        /// </summary>
         public void Sync()
         {
             var sheet = Services.DataManager.GetExcelSheet<Action>()!;
 
-            _tracked.RemoveAll(cd => !_config.Tracked.ContainsKey(cd.ActionId));
+            // remove cooldown we dont track anymore
+            _cooldowns.RemoveAll(cd => !_config.Tracked.ContainsKey(cd.ActionId));
 
+            // are the missing cooldowns on what we need to track
             foreach (var (actionId, settings) in _config.Tracked)
             {
-                if (_tracked.Exists(cd => cd.ActionId == actionId)) continue;
+                if (_cooldowns.Exists(cd => cd.ActionId == actionId)) continue;
 
                 var cd = new TrackedCooldown { ActionId = actionId, Settings = settings };
                 if (sheet.TryGetRow(actionId, out Action row))
@@ -71,13 +61,12 @@ namespace ItsUp
                     cd.IconId = row.Icon;
                 }
 
-                Services.Logger.Information($"Tracking {actionId} = \"{cd.Name}\" (icon {cd.IconId})");
-                _tracked.Add(cd);
+                Services.Logger.Information($"Added cooldown {actionId} = \"{cd.Name}\" (icon {cd.IconId})");
+                _cooldowns.Add(cd);
             }
 
-            // Panel order follows the picker's order rather than dictionary order, which is not stable
-            // across removals.
-            _tracked.Sort((lhs, rhs) => string.Compare(lhs.Name, rhs.Name, StringComparison.Ordinal));
+            // Same order than the config (alphabetical action name)
+            _cooldowns.Sort((lhs, rhs) => string.Compare(lhs.Name, rhs.Name, StringComparison.Ordinal));
         }
 
         public unsafe void Update()
@@ -89,52 +78,54 @@ namespace ItsUp
             var inCombat = Services.Condition[ConditionFlag.InCombat];
             var now = DateTime.UtcNow;
 
-            foreach (var cd in _tracked)
+            foreach (var cd in _cooldowns)
             {
-                // Expire an in-flight consumed-state animation once it has played out.
-                if (cd.ConsumedSince is { } consumedAt &&
-                    (now - consumedAt).TotalMilliseconds > TrackedCooldown.ConsumeFadeMs)
-                    cd.ConsumedSince = null;
+                // Turn off the "pressed" animation after its duration
+                if (cd.PressedSince is { } pressedAt &&
+                    (now - pressedAt).TotalMilliseconds > TrackedCooldown.PressedFadeDuration)
+                    cd.PressedSince = null;
 
-                // Deliberately not GetActionStatus: it also reports "unusable" while you are casting,
-                // which would fire a fresh reveal on every single hard cast.
                 var maxCharges = ActionManager.GetMaxCharges(cd.ActionId, player.Level);
-                var available = maxCharges == 0
-                    ? !am->IsRecastTimerActive(ActionType.Action, cd.ActionId)
-                    : am->GetCurrentCharges(cd.ActionId) >= 1;
+
+                // if the action has charges is available if we have one charge
+                //  else if is not on cd
+                var available = maxCharges > 0
+                    ? am->GetCurrentCharges(cd.ActionId) >= 1
+                    : !am->IsRecastTimerActive(ActionType.Action, cd.ActionId);
 
                 var total = am->GetRecastTime(ActionType.Action, cd.ActionId);
                 var elapsed = am->GetRecastTimeElapsed(ActionType.Action, cd.ActionId);
                 cd.SecondsLeft = Math.Max(0f, total - elapsed);
 
-                // Out of combat we keep re-baselining, so the next pull starts clean instead of
-                // firing reveals for everything that happened to be on cooldown.
+                // Out of combat we keep re-baselining, so the next pull starts clean
                 if (!inCombat)
                 {
                     cd.ReadySince = null;
-                    cd.ConsumedSince = null;   // rebaselining wipes edge state uniformly, no fight-end flash
-                    cd.Available = cd.WasAvailable = available;
+                    cd.PressedSince = null;
+                    cd.Available = available;
                     continue;
                 }
 
-                if (!cd.WasAvailable && available) cd.ReadySince = now;   // it came back
+                if (!cd.Available && available) cd.ReadySince = now;
 
-                if (cd.WasAvailable && !available)                        // you pressed it
+                if (cd.Available && !available)
                 {
+                    // pressed now
                     cd.ReadySince = null;
-                    cd.ConsumedSince = now;
-                    cd.ConsumedByPress = true;
+                    cd.PressedSince = now;
+                    cd.IsPressed = true;
                 }
 
+                // we should hide now
                 if (!cd.LingerForever && cd.ReadySince is { } since &&
                     (now - since).TotalMilliseconds > cd.LingerMs)
                 {
-                    cd.ReadySince = null;                                 // nagged long enough
-                    cd.ConsumedSince = now;
-                    cd.ConsumedByPress = false;
+                    cd.ReadySince = null;
+                    cd.PressedSince = now;
+                    cd.IsPressed = false;
                 }
 
-                cd.Available = cd.WasAvailable = available;
+                cd.Available = available;
             }
         }
     }

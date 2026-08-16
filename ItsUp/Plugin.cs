@@ -9,7 +9,7 @@ namespace ItsUp
 {
     public sealed class Plugin : IDalamudPlugin
     {
-        public string Name => "It's Up";
+        public static string Name => "It's Up";
 
         private const string CommandName = "/itsup";
 
@@ -44,13 +44,8 @@ namespace ItsUp
 
             _pluginInterface.UiBuilder.Draw += DrawUI;
             _pluginInterface.UiBuilder.OpenConfigUi += OpenConfig;
-            // The panel is always open and has no controls of its own, so the settings window is the
-            // only thing "open the plugin" can usefully mean.
-            _pluginInterface.UiBuilder.OpenMainUi += OpenConfig;
+            _pluginInterface.UiBuilder.OpenMainUi += ToggleLock;
             Services.Framework.Update += OnUpdate;
-
-            // Nothing is tracked out of the box, so a fresh install would otherwise look broken.
-            if (existing == null) _configWindow.IsOpen = true;
         }
 
         private void OnUpdate(IFramework framework) => _tracker.Update();
@@ -62,10 +57,12 @@ namespace ItsUp
         private void OnCommand(string command, string args)
         {
             if (args.Trim().Equals("config", StringComparison.OrdinalIgnoreCase))
-                _configWindow.IsOpen = !_configWindow.IsOpen;
+                OpenConfig();
             else
-                _window.ToggleLock();
+                ToggleLock();
         }
+        
+        private void ToggleLock() => _window.ToggleLock();
 
         public void Dispose()
         {
