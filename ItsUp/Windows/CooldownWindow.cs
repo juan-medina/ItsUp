@@ -2,9 +2,11 @@ using System;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using Lumina.Excel.Sheets;
 
 namespace ItsUp.Windows
 {
@@ -58,6 +60,9 @@ namespace ItsUp.Windows
         private bool _resizing;
         private bool _sizeDirty;
 
+        private bool _drawIcons;
+        private bool _drawAnchor;
+
         public CooldownWindow(CooldownTracker cooldowns, Configuration config)
             : base("It's Up##itsup")
         {
@@ -100,6 +105,18 @@ namespace ItsUp.Windows
 
         public override void PreDraw()
         {
+            var inCombat = Services.Condition[ConditionFlag.InCombat];
+
+            _drawAnchor = !inCombat && _unlocked;
+            _drawIcons = inCombat && !_unlocked;
+            var needUnlock = _unlocked && inCombat;
+
+            // if we are unlocked and in combat we need to lock
+            if (needUnlock) SetLock(false);
+
+            // nothing to draw
+            if (!_drawAnchor && !_drawIcons) return;
+
             EnsureAnchorPlaced();
 
             var width = _unlocked ? IconSize : ContentWidth(IconCount());
@@ -155,11 +172,14 @@ namespace ItsUp.Windows
 
         public override void Draw()
         {
+            // nothing to draw
+            if (!_drawAnchor && !_drawIcons) return;
+
             var drawList = ImGui.GetWindowDrawList();
             var origin = ImGui.GetCursorScreenPos();
             _contentOffset = origin - ImGui.GetWindowPos();
 
-            if (_unlocked)
+            if (_drawAnchor)
             {
                 ImGui.Dummy(new Vector2(IconSize, IconSize));
                 DrawSlotPreview(drawList, origin);
@@ -169,16 +189,18 @@ namespace ItsUp.Windows
                 return;
             }
 
-            var drawn = false;
-
-            foreach (var cd in _cooldowns.Cooldowns)
+            if (_drawIcons)
             {
-                if (!cd.Visible) continue;
+                var drawn = false;
+                foreach (var cd in _cooldowns.Cooldowns)
+                {
+                    if (!cd.Visible) continue;
 
-                if (drawn) ImGui.SameLine(0, IconGap);
-                drawn = true;
+                    if (drawn) ImGui.SameLine(0, IconGap);
+                    drawn = true;
 
-                DrawEntry(drawList, cd, IconSize);
+                    DrawEntry(drawList, cd, IconSize);
+                }
             }
         }
 
