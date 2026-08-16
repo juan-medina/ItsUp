@@ -10,8 +10,9 @@ namespace ItsUp.Windows
 {
     public class CooldownWindow : Window
     {
-        private const float IconSize = 48f;
-        private const float IconGap = 6f;
+        private const float MinIconSize = 24f;
+        private const float MaxIconSize = 128f;
+        private const float ResizeHandleSize = 12f;
 
         private const uint ColourReady = 0xFF00D7FF;   // gold, ABGR
         private const uint ColourDim = 0xA0000000;
@@ -54,6 +55,8 @@ namespace ItsUp.Windows
         private BarAnchor _lastAnchor;
         private bool _anchorDirty;
         private bool _dragging;
+        private bool _resizing;
+        private bool _sizeDirty;
 
         public CooldownWindow(CooldownTracker cooldowns, Configuration config)
             : base("It's Up##itsup")
@@ -77,7 +80,12 @@ namespace ItsUp.Windows
             Flags = _unlocked ? UnlockedFlags : LockedFlags;
             IsOpen = true;
             _dragging = false;
+            _resizing = false;
         }
+
+        private float IconSize => Math.Clamp(_config.IconSize, MinIconSize, MaxIconSize);
+
+        private float IconGap => IconSize / 8f;
 
         private float AnchorFactor => _config.Anchor switch
         {
@@ -88,8 +96,7 @@ namespace ItsUp.Windows
 
         private int IconCount() => _cooldowns.Cooldowns.Count(cd => cd.Visible);
 
-        private static float ContentWidth(int icons) =>
-            icons <= 0 ? IconSize : icons * IconSize + (icons - 1) * IconGap;
+        private float ContentWidth(int icons) => icons <= 0 ? IconSize : icons * IconSize + (icons - 1) * IconGap;
 
         public override void PreDraw()
         {
@@ -139,6 +146,7 @@ namespace ItsUp.Windows
             {
                 ImGui.Dummy(new Vector2(IconSize, IconSize));
                 DrawSlotPreview(drawList, origin);
+                HandleResize(origin);
                 HandleDrag();
                 HandleDirectionCycle();
                 return;
@@ -153,7 +161,7 @@ namespace ItsUp.Windows
                 if (drawn) ImGui.SameLine(0, IconGap);
                 drawn = true;
 
-                DrawEntry(drawList, cd);
+                DrawEntry(drawList, cd, IconSize);
             }
         }
 
@@ -187,6 +195,42 @@ namespace ItsUp.Windows
                     new Vector2(left + 6f, midY - 5f),
                     new Vector2(left, midY),
                     ColourAnchor);
+
+            // Resize grip: drag this corner to change icon size.
+            drawList.AddTriangleFilled(
+                new Vector2(pos.X + size.X, pos.Y + size.Y - ResizeHandleSize),
+                new Vector2(pos.X + size.X, pos.Y + size.Y),
+                new Vector2(pos.X + size.X - ResizeHandleSize, pos.Y + size.Y),
+                _resizing ? ColourText : ColourAnchor);
+        }
+
+
+        private void HandleResize(Vector2 slotOrigin)
+        {
+            var handleMin = slotOrigin + new Vector2(IconSize - ResizeHandleSize, IconSize - ResizeHandleSize);
+            var handleMax = slotOrigin + new Vector2(IconSize, IconSize);
+
+            if (!_resizing && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && ImGui.IsMouseHoveringRect(handleMin, handleMax))
+                _resizing = true;
+
+            if (_resizing)
+            {
+                var delta = ImGui.GetIO().MouseDelta;
+                if (delta != Vector2.Zero)
+                {
+                    _config.IconSize = Math.Clamp(_config.IconSize + (delta.X + delta.Y) / 2f, MinIconSize, MaxIconSize);
+                    _sizeDirty = true;
+                }
+            }
+
+            if (ImGui.IsMouseDown(ImGuiMouseButton.Left)) return;
+
+            _resizing = false;
+
+            // Save on release rather than every frame of the drag.
+            if (!_sizeDirty) return;
+            _config.Save();
+            _sizeDirty = false;
         }
 
 
@@ -194,7 +238,7 @@ namespace ItsUp.Windows
         {
             // IsWindowHovered rather than a rectangle test, so clicking the settings window where it
             // overlaps the panel does not grab the panel underneath.
-            if (!_dragging && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && ImGui.IsWindowHovered())
+            if (!_dragging && !_resizing && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && ImGui.IsWindowHovered())
                 _dragging = true;
 
             if (_dragging)
@@ -231,10 +275,10 @@ namespace ItsUp.Windows
             };
         }
 
-        private static void DrawEntry(ImDrawListPtr drawList, TrackedCooldown cd)
+        private static void DrawEntry(ImDrawListPtr drawList, TrackedCooldown cd, float iconSize)
         {
             var pos = ImGui.GetCursorScreenPos();
-            var size = new Vector2(IconSize, IconSize);
+            var size = new Vector2(iconSize, iconSize);
 
             IDalamudTextureWrap? wrap = null;
             if (Services.TextureProvider.TryGetFromGameIcon(cd.IconId, out var texture))

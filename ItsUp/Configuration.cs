@@ -32,6 +32,7 @@ namespace ItsUp
         public BarAnchor Anchor { get; set; } = BarAnchor.Centre;
         public float AnchorX { get; set; }
         public float AnchorY { get; set; }
+        public float IconSize { get; set; } = 48f;
 
         [NonSerialized] private IDalamudPluginInterface _pluginInterface = null!;
         public void Initialize(IDalamudPluginInterface pluginInterface) => _pluginInterface = pluginInterface;
