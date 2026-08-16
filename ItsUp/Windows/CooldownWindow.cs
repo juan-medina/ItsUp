@@ -296,6 +296,7 @@ namespace ItsUp.Windows
         {
             var pos = ImGui.GetCursorScreenPos();
             var size = new Vector2(iconSize, iconSize);
+            var scale = iconSize / Configuration.DefaultIconSize;
 
             IDalamudTextureWrap? wrap = null;
             if (Services.TextureProvider.TryGetFromGameIcon(cd.IconId, out var texture))
@@ -306,7 +307,7 @@ namespace ItsUp.Windows
             if (cd.IsReady)
             {
                 DrawScaledIcon(drawList, wrap, pos, size, PopScaleFor(cd.ReadySince), 1f);
-                DrawReadyBorder(drawList, pos, size);
+                DrawReadyBorder(drawList, pos, size, scale);
                 return;
             }
 
@@ -315,8 +316,10 @@ namespace ItsUp.Windows
                 DrawScaledIcon(drawList, wrap, pos, size, 1f, 1f);
                 DrawWarmingWipe(drawList, pos, size, cd);
                 var label = Math.Ceiling(cd.SecondsLeft).ToString("0");
-                var textSize = ImGui.CalcTextSize(label);
-                drawList.AddText(pos + (size - textSize) / 2f, ColourText, label);
+                var font = ImGui.GetFont();
+                var fontSize = ImGui.GetFontSize() * scale;
+                var textSize = ImGui.CalcTextSizeA(font, fontSize, float.MaxValue, -1f, label, out _);
+                drawList.AddText(font, fontSize, pos + (size - textSize) / 2f, ColourText, label);
                 return;
             }
 
@@ -395,23 +398,23 @@ namespace ItsUp.Windows
             return new Vector2(pos.X, pos.Y + size.Y - d);
         }
 
-        private static void DrawMarchingAnts(ImDrawListPtr drawList, Vector2 pos, Vector2 size, float alpha)
+        private static void DrawMarchingAnts(ImDrawListPtr drawList, Vector2 pos, Vector2 size, float alpha, float scale)
         {
             var perimeter = 2f * (size.X + size.Y);
             var offset = (float)(ImGui.GetTime() * AntSpeedPxPerSec) % AntSpacingPx;
             var colour = WithAlpha(ColourReady, alpha);
 
             for (var d = offset; d < perimeter; d += AntSpacingPx)
-                drawList.AddCircleFilled(PerimeterPoint(pos, size, d), AntRadius, colour, 8);
+                drawList.AddCircleFilled(PerimeterPoint(pos, size, d), AntRadius * scale, colour, 8);
         }
 
-        private static void DrawReadyBorder(ImDrawListPtr drawList, Vector2 pos, Vector2 size)
+        private static void DrawReadyBorder(ImDrawListPtr drawList, Vector2 pos, Vector2 size, float scale)
         {
             var breath = (MathF.Sin((float)ImGui.GetTime() * MathF.Tau / BreathPeriodSeconds) + 1f) * 0.5f;
 
-            drawList.AddRect(pos, pos + size, WithAlpha(ColourReady, 0.55f + 0.45f * breath), 3f,
-                ImDrawFlags.None, 1.5f + breath);
-            DrawMarchingAnts(drawList, pos, size, 0.7f + 0.3f * breath);
+            drawList.AddRect(pos, pos + size, WithAlpha(ColourReady, 0.55f + 0.45f * breath), 3f * scale,
+                ImDrawFlags.None, (1.5f + breath) * scale);
+            DrawMarchingAnts(drawList, pos, size, 0.7f + 0.3f * breath, scale);
         }
 
 
