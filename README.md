@@ -19,17 +19,6 @@ something you've already used is up again. When to use it is still entirely up t
 
 <p align="center"><img src="docs/warming-icon.gif" alt="Cooldown animation showing in a action"><br><i>A icon counts down just before an ability returns</i></p>
 
-## Install
-
-Add this as a custom plugin repository (`/xlsettings` → **Experimental** → **Custom Plugin
-Repositories**):
-
-```
-https://github.com/juan-medina/ItsUp/releases/latest/download/repo.json
-```
-
-Then install **It's Up** from `/xlplugins`.
-
 ## Use
 
 - `/itsup config` — pick which abilities to track

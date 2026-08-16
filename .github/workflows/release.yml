@@ -95,27 +95,16 @@ jobs:
             ItsUp/bin/x64/Release
             !ItsUp/bin/x64/Release/ItsUp
 
-      # The SDK always names the package latest.zip; repo.json's download links need a stable,
-      # plugin-named asset instead, so it is copied under the name players' game clients look for.
+      # The SDK always names the package latest.zip; copy it under a stable, plugin-named asset
+      # instead so the release archive is identifiable on its own.
       - name: Rename package for release
         run: Copy-Item -Path ItsUp/bin/x64/Release/ItsUp/latest.zip -Destination ItsUp/bin/x64/Release/ItsUp/ItsUp.zip
 
-      # base_repo.json keeps "0.0.0.1" as a literal placeholder in every field that has to track
-      # the released version — the version fields and, cleverly, inside the release download URLs
-      # too — so one regex replace produces a valid repo.json. JSON has no comment syntax, so that
-      # convention is documented in .agents/AGENTS.md instead of in the file itself.
-      - name: Write repo.json for the released version
-        shell: pwsh
-        run: |
-          $ver = "${{ needs.prepare.outputs.version }}"
-          (Get-Content -Path ./base_repo.json -Raw) -replace '0\.0\.0\.1', $ver | Set-Content -Path ./repo.json
-
       # actions/create-release and actions/upload-release-asset (what LMeter's workflow uses) are
       # archived and unmaintained. softprops/action-gh-release does both in one actively-maintained
-      # step — and, uploading repo.json as a release asset alongside the plugin zip rather than
-      # committing it to main means this workflow never touches a branch at all: tag + release,
-      # nothing else, matching the sibling Godot project's release.yml.
-      - name: Create release and attach the plugin zip and repo.json
+      # step — and never touching a branch (tag + release, nothing else) matches the sibling Godot
+      # project's release.yml.
+      - name: Create release and attach the plugin zip
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.version }}
@@ -124,5 +113,4 @@ jobs:
           prerelease: false
           files: |
             ItsUp/bin/x64/Release/ItsUp/ItsUp.zip
-            repo.json
           fail_on_unmatched_files: true
