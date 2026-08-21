@@ -99,7 +99,7 @@ namespace ItsUp.Windows
             _ => 0f,
         };
 
-        private int IconCount() => _cooldowns.Cooldowns.Count(cd => cd.Visible);
+        private int IconCount() => _cooldowns.ActiveCooldowns.Count;
 
         private float ContentWidth(int icons) => icons <= 0 ? IconSize : icons * IconSize + (icons - 1) * IconGap;
 
@@ -192,10 +192,8 @@ namespace ItsUp.Windows
             if (_drawIcons)
             {
                 var drawn = false;
-                foreach (var cd in _cooldowns.Cooldowns)
+                foreach (var cd in _cooldowns.ActiveCooldowns)
                 {
-                    if (!cd.Visible) continue;
-
                     if (drawn) ImGui.SameLine(0, IconGap);
                     drawn = true;
 
@@ -326,14 +324,14 @@ namespace ItsUp.Windows
 
             ImGui.Dummy(size);
 
-            if (cd.IsReady)
+            if (cd.State == CooldownState.Ready)
             {
-                DrawScaledIcon(drawList, wrap, pos, size, PopScaleFor(cd.ReadySince), 1f);
+                DrawScaledIcon(drawList, wrap, pos, size, PopScaleFor(cd.StateEnteredAt), 1f);
                 DrawReadyBorder(drawList, pos, size, scale);
                 return;
             }
 
-            if (cd.IsWarming)
+            if (cd.State == CooldownState.Warming)
             {
                 DrawScaledIcon(drawList, wrap, pos, size, 1f, 1f);
                 DrawWarmingWipe(drawList, pos, size, cd);
@@ -345,7 +343,7 @@ namespace ItsUp.Windows
                 return;
             }
 
-            if (cd.IsFading)
+            if (cd.State is CooldownState.PressedFading or CooldownState.LingerFading)
                 DrawPressed(drawList, wrap, pos, size, cd);
         }
 
@@ -455,12 +453,12 @@ namespace ItsUp.Windows
         private static void DrawPressed(
             ImDrawListPtr drawList, IDalamudTextureWrap? wrap, Vector2 pos, Vector2 size, TrackedCooldown cd)
         {
-            var t = Math.Clamp((float)(DateTime.UtcNow - cd.PressedSince!.Value).TotalSeconds / PressedFadeSeconds, 0f, 1f);
+            var t = Math.Clamp((float)(DateTime.UtcNow - cd.StateEnteredAt).TotalSeconds / PressedFadeSeconds, 0f, 1f);
             var eased = EaseOutCubic(t);
 
             DrawScaledIcon(drawList, wrap, pos, size, 1f - (1f - PressedShrinkTo) * eased, 1f - eased);
 
-            if (cd.IsPressed)
+            if (cd.State == CooldownState.PressedFading)
                 drawList.AddRectFilled(pos, pos + size, WithAlpha(ColourPressedFlash, (1f - eased) * 0.6f), 3f);
         }
     }

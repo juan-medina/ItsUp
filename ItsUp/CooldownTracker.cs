@@ -6,6 +6,15 @@ using Action = Lumina.Excel.Sheets.Action;
 
 namespace ItsUp
 {
+    public enum CooldownState
+    {
+        Hidden,
+        Warming,
+        Ready,
+        PressedFading,
+        LingerFading
+    }
+
     public class TrackedCooldown
     {
         public required uint ActionId { get; init; }
@@ -22,32 +31,37 @@ namespace ItsUp
         public bool Available;
 
         public float SecondsLeft;
-        public DateTime? ReadySince;
-
         public const int PressedFadeDuration = 280;
 
-        public DateTime? PressedSince;
-        public bool IsPressed;
+        public CooldownState State { get; private set; } = CooldownState.Hidden;
+        public DateTime StateEnteredAt { get; private set; }
 
-        public bool IsReady => ReadySince != null;
-        public bool IsWarming => !Available && SecondsLeft > 0f && SecondsLeft <= WarnMs / 1000f;
-        public bool IsFading => PressedSince != null;
-        public bool Visible => IsReady || IsWarming || IsFading;
+        public bool Visible => State != CooldownState.Hidden;
+
+        public void TransitionTo(CooldownState newState)
+        {
+            State = newState;
+            StateEnteredAt = DateTime.UtcNow;
+        }
     }
 
     public class CooldownTracker(Configuration config)
     {
         private readonly Configuration _config = config;
         private readonly List<TrackedCooldown> _cooldowns = [];
+        private readonly List<TrackedCooldown> _activeCooldowns = [];
 
         public IReadOnlyList<TrackedCooldown> Cooldowns => _cooldowns;
+        public IReadOnlyList<TrackedCooldown> ActiveCooldowns => _activeCooldowns;
 
         public void Sync()
         {
             var sheet = Services.DataManager.GetExcelSheet<Action>()!;
 
-            // remove cooldown we dont track anymore
-            _cooldowns.RemoveAll(cd => !_config.Tracked.ContainsKey(cd.ActionId));
+            // remove cooldown we don't track anymore
+            var removed = _cooldowns.RemoveAll(cd => !_config.Tracked.ContainsKey(cd.ActionId));
+            if (removed > 0)
+                _activeCooldowns.RemoveAll(cd => !_config.Tracked.ContainsKey(cd.ActionId));
 
             // are the missing cooldowns on what we need to track
             foreach (var (actionId, settings) in _config.Tracked)
@@ -64,9 +78,6 @@ namespace ItsUp
                 Services.Logger.Information($"Added cooldown {actionId} = \"{cd.Name}\" (icon {cd.IconId})");
                 _cooldowns.Add(cd);
             }
-
-            // Same order than the config (alphabetical action name)
-            _cooldowns.Sort((lhs, rhs) => string.Compare(lhs.Name, rhs.Name, StringComparison.Ordinal));
         }
 
         public unsafe void Update()
@@ -80,11 +91,6 @@ namespace ItsUp
 
             foreach (var cd in _cooldowns)
             {
-                // Turn off the "pressed" animation after its duration
-                if (cd.PressedSince is { } pressedAt &&
-                    (now - pressedAt).TotalMilliseconds > TrackedCooldown.PressedFadeDuration)
-                    cd.PressedSince = null;
-
                 var maxCharges = ActionManager.GetMaxCharges(cd.ActionId, player.Level);
 
                 // if the action has charges is available if we have one charge
@@ -96,36 +102,59 @@ namespace ItsUp
                 var total = am->GetRecastTime(ActionType.Action, cd.ActionId);
                 var elapsed = am->GetRecastTimeElapsed(ActionType.Action, cd.ActionId);
                 cd.SecondsLeft = Math.Max(0f, total - elapsed);
+                var wasAvailable = cd.Available;
+                cd.Available = available;
 
-                // Out of combat we keep re-baselining, so the next pull starts clean
+                // Evaluate state transitions
+                var nextState = cd.State;
+
                 if (!inCombat)
                 {
-                    cd.ReadySince = null;
-                    cd.PressedSince = null;
-                    cd.Available = available;
-                    continue;
+                    nextState = CooldownState.Hidden;
                 }
-
-                if (!cd.Available && available) cd.ReadySince = now;
-
-                if (cd.Available && !available)
+                else
                 {
-                    // pressed now
-                    cd.ReadySince = null;
-                    cd.PressedSince = now;
-                    cd.IsPressed = true;
+                    switch (cd.State)
+                    {
+                        case CooldownState.Hidden:
+                            if (!available && cd.SecondsLeft > 0f && cd.SecondsLeft <= cd.WarnMs / 1000f)
+                                nextState = CooldownState.Warming;
+                            else if (!wasAvailable && available)
+                                nextState = CooldownState.Ready;
+                            break;
+
+                        case CooldownState.Warming:
+                            if (available)
+                                nextState = CooldownState.Ready;
+                            else if (cd.SecondsLeft > cd.WarnMs / 1000f) // e.g. reset
+                                nextState = CooldownState.Hidden;
+                            break;
+
+                        case CooldownState.Ready:
+                            if (!available)
+                                nextState = CooldownState.PressedFading;
+                            else if (!cd.LingerForever && (now - cd.StateEnteredAt).TotalMilliseconds > cd.LingerMs)
+                                nextState = CooldownState.LingerFading;
+                            break;
+
+                        case CooldownState.PressedFading:
+                        case CooldownState.LingerFading:
+                            if ((now - cd.StateEnteredAt).TotalMilliseconds > TrackedCooldown.PressedFadeDuration)
+                                nextState = CooldownState.Hidden;
+                            break;
+                    }
                 }
 
-                // we should hide now
-                if (!cd.LingerForever && cd.ReadySince is { } since &&
-                    (now - since).TotalMilliseconds > cd.LingerMs)
+                // Execute transition if changed
+                if (cd.State != nextState)
                 {
-                    cd.ReadySince = null;
-                    cd.PressedSince = now;
-                    cd.IsPressed = false;
-                }
+                    if (cd.State == CooldownState.Hidden && nextState != CooldownState.Hidden)
+                        _activeCooldowns.Add(cd);
+                    else if (cd.State != CooldownState.Hidden && nextState == CooldownState.Hidden)
+                        _activeCooldowns.Remove(cd);
 
-                cd.Available = available;
+                    cd.TransitionTo(nextState);
+                }
             }
         }
     }
