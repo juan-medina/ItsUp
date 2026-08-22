@@ -16,11 +16,11 @@ namespace ItsUp.Windows
         private const float MaxIconSize = 128f;
         private const float ResizeHandleSize = 12f;
 
-        private const uint ColourReady = 0xFF00D7FF;   // gold, ABGR
+        private const uint ColourReady = 0xFF00D7FF;
         private const uint ColourDim = 0xA0000000;
         private const uint ColourPreview = 0xC0000000;
         private const uint ColourText = 0xFFFFFFFF;
-        private const uint ColourPressedFlash = 0xFF33DD33;   // vivid green, ABGR — plays on a press only
+        private const uint ColourPressedFlash = 0xFF33DD33;
 
         private const float PulseFinalWindowSeconds = 1f;
         private const float PulseFreqMinHz = 2f;
@@ -46,7 +46,7 @@ namespace ItsUp.Windows
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.AlwaysAutoResize |
             ImGuiWindowFlags.NoMove;
 
-        private const uint ColourAnchor = 0xFF00D7FF;  // gold, ABGR
+        private const uint ColourAnchor = 0xFF00D7FF;
 
         private readonly CooldownTracker _cooldowns;
         private readonly Configuration _config;
@@ -75,8 +75,7 @@ namespace ItsUp.Windows
         }
 
         public bool Unlocked => _unlocked;
-
-        /// <summary>Move mode: show a single draggable slot in place of the live bar.</summary>
+        
         public void ToggleLock() => SetLock(!_unlocked);
 
         public void SetLock(bool unlocked)
@@ -326,8 +325,9 @@ namespace ItsUp.Windows
 
             if (cd.State == CooldownState.Ready)
             {
-                DrawScaledIcon(drawList, wrap, pos, size, PopScaleFor(cd.StateEnteredAt), 1f);
-                DrawReadyBorder(drawList, pos, size, scale);
+                var popScale = PopScaleFor(cd.StateEnteredAt);
+                DrawScaledIcon(drawList, wrap, pos, size, popScale, 1f);
+                DrawReadyBorder(drawList, pos, size, scale, popScale);
                 return;
             }
 
@@ -418,23 +418,34 @@ namespace ItsUp.Windows
             return new Vector2(pos.X, pos.Y + size.Y - d);
         }
 
-        private static void DrawMarchingAnts(ImDrawListPtr drawList, Vector2 pos, Vector2 size, float alpha, float scale)
+        private static void DrawMarchingAnts(ImDrawListPtr drawList, Vector2 pos, Vector2 size, float alpha, float scale, float popScale)
         {
             var perimeter = 2f * (size.X + size.Y);
             var offset = (float)(ImGui.GetTime() * AntSpeedPxPerSec) % AntSpacingPx;
             var colour = WithAlpha(ColourReady, alpha);
 
+            var center = pos + size / 2f;
+            var antRadius = AntRadius * scale;
+
             for (var d = offset; d < perimeter; d += AntSpacingPx)
-                drawList.AddCircleFilled(PerimeterPoint(pos, size, d), AntRadius * scale, colour, 8);
+            {
+                var p = PerimeterPoint(pos, size, d);
+                var scaledP = center + (p - center) * popScale;
+                drawList.AddCircleFilled(scaledP, antRadius, colour, 8);
+            }
         }
 
-        private static void DrawReadyBorder(ImDrawListPtr drawList, Vector2 pos, Vector2 size, float scale)
+        private static void DrawReadyBorder(ImDrawListPtr drawList, Vector2 pos, Vector2 size, float scale, float popScale)
         {
             var breath = (MathF.Sin((float)ImGui.GetTime() * MathF.Tau / BreathPeriodSeconds) + 1f) * 0.5f;
 
-            drawList.AddRect(pos, pos + size, WithAlpha(ColourReady, 0.55f + 0.45f * breath), 3f * scale,
-                ImDrawFlags.None, (1.5f + breath) * scale);
-            DrawMarchingAnts(drawList, pos, size, 0.7f + 0.3f * breath, scale);
+            var scaledSize = size * popScale;
+            var scaledPos = pos + (size - scaledSize) / 2f;
+            var lineThickness = (1.5f + breath) * scale;
+
+            drawList.AddRect(scaledPos, scaledPos + scaledSize, WithAlpha(ColourReady, 0.55f + 0.45f * breath), 3f * scale,
+                ImDrawFlags.None, lineThickness);
+            DrawMarchingAnts(drawList, pos, size, 0.7f + 0.3f * breath, scale, popScale);
         }
 
 
