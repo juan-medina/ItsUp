@@ -37,6 +37,11 @@ namespace ItsUp.Windows
         private const float PressedShrinkTo = 0.7f;
         private const float PressedFadeSeconds = TrackedCooldown.PressedFadeDuration / 1000f;
 
+        private const float IconFontSize = 42f;
+        private const uint OutlineColour = 0xFF000000;
+        private const float OutlineThickness = 1.5f;
+
+
         private const ImGuiWindowFlags LockedFlags =
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoMove |
             ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoMouseInputs |
@@ -75,7 +80,7 @@ namespace ItsUp.Windows
         }
 
         public bool Unlocked => _unlocked;
-        
+
         public void ToggleLock() => SetLock(!_unlocked);
 
         public void SetLock(bool unlocked)
@@ -336,10 +341,23 @@ namespace ItsUp.Windows
                 DrawScaledIcon(drawList, wrap, pos, size, 1f, 1f);
                 DrawWarmingWipe(drawList, pos, size, cd);
                 var label = Math.Ceiling(cd.SecondsLeft).ToString("0");
+                var useFont = Plugin.NumberFont?.Available == true;
+                if (useFont) Plugin.NumberFont!.Push();
+
                 var font = ImGui.GetFont();
-                var fontSize = ImGui.GetFontSize() * scale;
+                var fontSize = IconFontSize * scale;
                 var textSize = ImGui.CalcTextSizeA(font, fontSize, float.MaxValue, -1f, label, out _);
-                drawList.AddText(font, fontSize, pos + (size - textSize) / 2f, ColourText, label);
+                var textPos = pos + (size - textSize) / 2f;
+
+                var outlineSize = OutlineThickness * scale;
+                drawList.AddText(font, fontSize, textPos + new Vector2(-outlineSize, 0), OutlineColour, label);
+                drawList.AddText(font, fontSize, textPos + new Vector2(outlineSize, 0), OutlineColour, label);
+                drawList.AddText(font, fontSize, textPos + new Vector2(0, -outlineSize), OutlineColour, label);
+                drawList.AddText(font, fontSize, textPos + new Vector2(0, outlineSize), OutlineColour, label);
+
+                drawList.AddText(font, fontSize, textPos, ColourText, label);
+
+                if (useFont) Plugin.NumberFont!.Pop();
                 return;
             }
 

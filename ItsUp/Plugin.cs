@@ -4,6 +4,8 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using ItsUp.Windows;
+using System.IO;
+using Dalamud.Interface.ManagedFontAtlas;
 
 namespace ItsUp
 {
@@ -12,6 +14,17 @@ namespace ItsUp
         public static string Name => "It's Up";
 
         private const string CommandName = "/itsup";
+        private const float BakedFontSize = 92.0f;
+        private const int HorizontalOversample = 2;
+        private const int VerticalOversample = 2;
+        private const string FontFile = "BebasNeue-Regular.ttf";
+        private static readonly SafeFontConfig FontConfig = new SafeFontConfig
+        {
+            SizePx = BakedFontSize,
+            OversampleH = HorizontalOversample,
+            OversampleV = VerticalOversample,
+            GlyphRanges = [0x0030, 0x0039, 0] // Just 0 to 9 digits
+        };
 
         private readonly IDalamudPluginInterface _pluginInterface;
         private readonly WindowSystem _windowSystem = new("ItsUp");
@@ -19,6 +32,9 @@ namespace ItsUp
         private readonly CooldownTracker _tracker;
         private readonly CooldownWindow _window;
         private readonly ConfigWindow _configWindow;
+        private readonly string _numberFontPath;
+
+        public static IFontHandle? NumberFont { get; private set; }
 
         public Plugin(IDalamudPluginInterface pluginInterface)
         {
@@ -46,6 +62,17 @@ namespace ItsUp
             _pluginInterface.UiBuilder.OpenConfigUi += OpenConfig;
             _pluginInterface.UiBuilder.OpenMainUi += ToggleLock;
             Services.Framework.Update += OnUpdate;
+
+            _numberFontPath = Path.Combine(_pluginInterface.AssemblyLocation.DirectoryName!, "Assets", FontFile);
+            NumberFont = _pluginInterface.UiBuilder.FontAtlas.NewDelegateFontHandle(e => e.OnPreBuild(BuildNumberFont));
+        }
+
+        private void BuildNumberFont(IFontAtlasBuildToolkitPreBuild tk)
+        {
+            if (File.Exists(_numberFontPath))
+            {
+                tk.AddFontFromFile(_numberFontPath, FontConfig);
+            }
         }
 
         private void OnUpdate(IFramework framework) => _tracker.Update();
@@ -61,7 +88,7 @@ namespace ItsUp
             else
                 ToggleLock();
         }
-        
+
         private void ToggleLock() => _window.ToggleLock();
 
         public void Dispose()
