@@ -144,7 +144,7 @@ namespace ItsUp.Windows
             TextMuted(Describe(_config.DefaultWarnMs, _config.DefaultLingerMs, _config.DefaultLingerForever));
 
             ImGui.AlignTextToFramePadding();
-            ImGui.TextUnformatted("Bar anchor");
+            ImGui.TextUnformatted("Panel anchor");
             ImGui.SameLine();
 
             var anchor = (int)_config.Anchor;

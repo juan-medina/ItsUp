@@ -55,12 +55,12 @@ namespace ItsUp
 
             Services.CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
             {
-                HelpMessage = "Toggle move mode so you can drag the cooldown panel. \"/itsup config\" opens settings."
+                HelpMessage = "Open settings.\n/itsup move → Unlocks the panel so you can drag it."
             });
 
             _pluginInterface.UiBuilder.Draw += DrawUI;
             _pluginInterface.UiBuilder.OpenConfigUi += OpenConfig;
-            _pluginInterface.UiBuilder.OpenMainUi += ToggleLock;
+            _pluginInterface.UiBuilder.OpenMainUi += OpenConfig;
             Services.Framework.Update += OnUpdate;
 
             _numberFontPath = Path.Combine(_pluginInterface.AssemblyLocation.DirectoryName!, "Assets", FontFile);
@@ -83,10 +83,10 @@ namespace ItsUp
 
         private void OnCommand(string command, string args)
         {
-            if (args.Trim().Equals("config", StringComparison.OrdinalIgnoreCase))
-                OpenConfig();
-            else
+            if (args.Trim().Equals("move", StringComparison.OrdinalIgnoreCase))
                 ToggleLock();
+            else
+                OpenConfig();
         }
 
         private void ToggleLock() => _window.ToggleLock();
