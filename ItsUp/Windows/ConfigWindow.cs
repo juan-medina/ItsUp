@@ -20,11 +20,16 @@ namespace ItsUp.Windows
         private readonly CooldownTracker _tracker;
         private readonly CooldownWindow _panel;
 
+        public record ActionItem(uint ActionId, uint ParentActionId = 0)
+        {
+            public bool IsFollowup => ParentActionId != 0;
+        }
+
         private readonly FrozenDictionary<uint, string> _actionNames;
         private readonly FrozenDictionary<uint, uint> _actionIcons;
         private readonly FrozenDictionary<uint, string> _jobAbbreviations;
-        private readonly FrozenDictionary<uint, List<uint>> _jobActionIds;
-        private readonly List<uint> _roleActionIds;
+        private readonly FrozenDictionary<uint, List<ActionItem>> _jobActions;
+        private readonly List<ActionItem> _roleActions;
         private readonly List<ClassJob> _jobs;
 
         private const int ActionType = 4;
@@ -59,7 +64,46 @@ namespace ItsUp.Windows
 
             _jobAbbreviations = _jobs.ToFrozenDictionary(j => j.RowId, j => j.Abbreviation.ToString());
 
-            var byJob = new Dictionary<uint, List<uint>>();
+            // Build followup relationships from Lumina ActionIndirection
+            var followupsByBase = new Dictionary<uint, List<uint>>();
+            var isFollowup = new HashSet<uint>();
+
+            void AddFollowup(uint baseId, uint childId)
+            {
+                if (baseId == 0 || childId == 0 || baseId == childId) return;
+                if (!followupsByBase.TryGetValue(baseId, out var list))
+                {
+                    list = [];
+                    followupsByBase[baseId] = list;
+                }
+                if (!list.Contains(childId))
+                {
+                    list.Add(childId);
+                    isFollowup.Add(childId);
+                }
+            }
+
+            var replaceSheet = Services.DataManager.GetSubrowExcelSheet<ReplaceAction>();
+            if (replaceSheet != null)
+            {
+                foreach (var subrowCollection in replaceSheet)
+                {
+                    foreach (var row in subrowCollection)
+                    {
+                        var baseId = row.Action.RowId;
+                        if (baseId == 0) continue;
+                        foreach (var targetRef in row.ReplaceActions)
+                        {
+                            var targetId = targetRef.RowId;
+                            if (targetId == 0 || targetId == baseId) continue;
+                            AddFollowup(baseId, targetId);
+                            Services.Logger.Information($"[ReplaceAction] Followup: {NameOf(baseId)} ({baseId}) -> {NameOf(targetId)} ({targetId})");
+                        }
+                    }
+                }
+            }
+
+            var byJob = new Dictionary<uint, List<ActionItem>>();
             foreach (var job in _jobs)
             {
                 // Get non-pvp player actions for that job with a cd bigger than 10s
@@ -70,18 +114,31 @@ namespace ItsUp.Windows
                                 && (a.ActionCategory.RowId == ActionType || a.Recast100ms > 100))
                     .Select(a => a.RowId);
 
-                // remove island sprint
-                var ids = jobActionIds.Where(id => id != IsleSprint).ToList();
+                // remove island sprint and exclude follow-ups from the root list
+                var rootIds = jobActionIds.Where(id => id != IsleSprint && !isFollowup.Contains(id)).ToList();
+                rootIds.Sort(CompareByName);
 
-                ids.Sort(CompareByName);
-                byJob[job.RowId] = ids;
+                var items = new List<ActionItem>();
+                foreach (var rootId in rootIds)
+                {
+                    items.Add(new ActionItem(rootId, 0));
+                    if (followupsByBase.TryGetValue(rootId, out var children))
+                    {
+                        foreach (var childId in children)
+                            items.Add(new ActionItem(childId, rootId));
+                    }
+                }
+
+                byJob[job.RowId] = items;
             }
-            _jobActionIds = byJob.ToFrozenDictionary();
+            _jobActions = byJob.ToFrozenDictionary();
 
-            _roleActionIds = [.. allActions
+            var roleIds = allActions
                 .Where(a => a.IsRoleAction && a.ClassJobLevel != 0)
-                .Select(a => a.RowId)];
-            _roleActionIds.Sort(CompareByName);
+                .Select(a => a.RowId)
+                .ToList();
+            roleIds.Sort(CompareByName);
+            _roleActions = [.. roleIds.Select(id => new ActionItem(id, 0))];
         }
 
         private int CompareByName(uint lhs, uint rhs) =>
@@ -93,7 +150,7 @@ namespace ItsUp.Windows
         private void SelectCurrentJob()
         {
             var jobId = Services.ObjectTable.LocalPlayer?.ClassJob.RowId ?? 0;
-            if (jobId == 0 || !_jobActionIds.ContainsKey(jobId)) return;
+            if (jobId == 0 || !_jobActions.ContainsKey(jobId)) return;
 
             _view = View.Job;
             _selectedJobId = jobId;
@@ -220,12 +277,12 @@ namespace ItsUp.Windows
 
         private void DrawSidebar()
         {
-            if (ImGui.Selectable(SidebarLabel("Role", _roleActionIds), _view == View.Role))
+            if (ImGui.Selectable(SidebarLabel("Role", _roleActions), _view == View.Role))
                 _view = View.Role;
 
             foreach (var job in _jobs)
             {
-                var label = SidebarLabel(_jobAbbreviations[job.RowId], _jobActionIds[job.RowId]);
+                var label = SidebarLabel(_jobAbbreviations[job.RowId], _jobActions[job.RowId]);
                 if (ImGui.Selectable(label, _view == View.Job && _selectedJobId == job.RowId))
                 {
                     _view = View.Job;
@@ -234,18 +291,18 @@ namespace ItsUp.Windows
             }
         }
 
-        private string SidebarLabel(string name, List<uint> ids)
+        private string SidebarLabel(string name, List<ActionItem> actions)
         {
-            var tracked = ids.Count(_config.Tracked.ContainsKey);
+            var tracked = actions.Count(a => _config.Tracked.ContainsKey(a.ActionId));
             return tracked > 0 ? $"{name} ({tracked})" : name;
         }
 
         private void DrawAbilities() =>
-            DrawAbilityTable(_view == View.Job && _jobActionIds.TryGetValue(_selectedJobId, out var ids)
-                ? ids
-                : _roleActionIds);
+            DrawAbilityTable(_view == View.Job && _jobActions.TryGetValue(_selectedJobId, out var actions)
+                ? actions
+                : _roleActions);
 
-        private void DrawAbilityTable(List<uint> ids)
+        private void DrawAbilityTable(List<ActionItem> actions)
         {
             const ImGuiTableFlags flags = ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.RowBg;
             using var table = ImRaii.Table("abilities", 4, flags);
@@ -257,70 +314,92 @@ namespace ItsUp.Windows
             ImGui.TableSetupColumn("Heads-up", ImGuiTableColumnFlags.WidthFixed, 78 * scale);
             ImGui.TableSetupColumn("Visible", ImGuiTableColumnFlags.WidthFixed, 220 * scale);
 
-
             ImGui.TableNextRow(ImGuiTableRowFlags.Headers);
             DrawHeader(0, "##track", null);
             DrawHeader(1, "Ability", null);
             DrawHeader(2, "Heads-up", "How long before the ability will show.");
             DrawHeader(3, "Visible", "How long the reminder stays on screen.");
 
-            foreach (var actionId in ids)
+            foreach (var root in actions.Where(a => !a.IsFollowup))
             {
-                using var id = ImRaii.PushId((int)actionId);
-                ImGui.TableNextRow();
+                DrawAbilityRow(root.ActionId, isFollowup: false);
 
-                ImGui.TableNextColumn();
-                _config.Tracked.TryGetValue(actionId, out var settings);
-                var track = settings != null;
-                if (ImGui.Checkbox("##track", ref track))
+                foreach (var followup in actions.Where(a => a.ParentActionId == root.ActionId))
                 {
-                    if (track)
-                    {
-                        settings = new AbilitySettings
-                        {
-                            WarnMs = _config.DefaultWarnMs,
-                            LingerMs = _config.DefaultLingerForever ? 0 : _config.DefaultLingerMs,
-                            LingerForever = _config.DefaultLingerForever
-                        };
-                        _config.Tracked[actionId] = settings;
-                    }
-                    else
-                    {
-                        _config.Tracked.Remove(actionId);
-                        settings = null;
-                    }
+                    DrawAbilityRow(followup.ActionId, isFollowup: true);
+                }
+            }
+        }
 
-                    _tracker.Sync();
-                    _config.Save();
+        private void DrawAbilityRow(uint actionId, bool isFollowup)
+        {
+            using var id = ImRaii.PushId((int)actionId);
+            ImGui.TableNextRow();
+
+            ImGui.TableNextColumn();
+            _config.Tracked.TryGetValue(actionId, out var settings);
+            var track = settings != null;
+            if (ImGui.Checkbox("##track", ref track))
+            {
+                if (track)
+                {
+                    settings = new AbilitySettings
+                    {
+                        WarnMs = isFollowup ? 0 : _config.DefaultWarnMs,
+                        LingerMs = _config.DefaultLingerForever ? 0 : _config.DefaultLingerMs,
+                        LingerForever = _config.DefaultLingerForever
+                    };
+                    _config.Tracked[actionId] = settings;
+                }
+                else
+                {
+                    _config.Tracked.Remove(actionId);
+                    settings = null;
                 }
 
-                ImGui.TableNextColumn();
-                DrawIcon(actionId);
+                _tracker.Sync();
+                _config.Save();
+            }
+
+            ImGui.TableNextColumn();
+            var scale = ImGuiHelpers.GlobalScale;
+            if (isFollowup)
+            {
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 16 * scale);
+                TextMuted("↳ ");
                 ImGui.SameLine();
+            }
+            DrawIcon(actionId);
+            ImGui.SameLine();
+            ImGui.AlignTextToFramePadding();
+
+            ImGui.TextUnformatted(NameOf(actionId));
+
+            ImGui.TableNextColumn();
+            if (isFollowup)
+            {
                 ImGui.AlignTextToFramePadding();
+                TextMuted("(?)");
+                Tooltip("Follow-up actions become available when their trigger ability is used,\nso a countdown before return does not apply.");
+            }
+            else if (settings != null)
+            {
+                var warn = settings.WarnMs;
+                if (DrawSecondsInput("##warn", ref warn)) settings.WarnMs = warn;
+                if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
+            }
 
-                ImGui.TextUnformatted(NameOf(actionId));
-
-                ImGui.TableNextColumn();
-                if (settings != null)
+            ImGui.TableNextColumn();
+            if (settings != null)
+            {
+                var linger = settings.LingerMs;
+                var lingerForever = settings.LingerForever;
+                if (DrawLingerInput("linger", ref linger, ref lingerForever, _config.DefaultLingerMs, out var commit))
                 {
-                    var warn = settings.WarnMs;
-                    if (DrawSecondsInput("##warn", ref warn)) settings.WarnMs = warn;
-                    if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
+                    settings.LingerMs = linger;
+                    settings.LingerForever = lingerForever;
                 }
-
-                ImGui.TableNextColumn();
-                if (settings != null)
-                {
-                    var linger = settings.LingerMs;
-                    var lingerForever = settings.LingerForever;
-                    if (DrawLingerInput("linger", ref linger, ref lingerForever, _config.DefaultLingerMs, out var commit))
-                    {
-                        settings.LingerMs = linger;
-                        settings.LingerForever = lingerForever;
-                    }
-                    if (commit) _config.Save();
-                }
+                if (commit) _config.Save();
             }
         }
 
