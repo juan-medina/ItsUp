@@ -30,6 +30,7 @@ namespace ItsUp
         private readonly WindowSystem _windowSystem = new("ItsUp");
         private readonly Configuration _config;
         private readonly CooldownTracker _tracker;
+        private readonly CooldownWatcher _watcher;
         private readonly CooldownWindow _window;
         private readonly ConfigWindow _configWindow;
         private readonly string _numberFontPath;
@@ -46,6 +47,8 @@ namespace ItsUp
             _config.Initialize(pluginInterface);
 
             _tracker = new CooldownTracker(_config);
+            _watcher = new CooldownWatcher(_config, _tracker);
+            _tracker.SetWatcher(_watcher);
             _tracker.Sync();
 
             _window = new CooldownWindow(_tracker, _config);
@@ -75,7 +78,11 @@ namespace ItsUp
             }
         }
 
-        private void OnUpdate(IFramework framework) => _tracker.Update();
+        private void OnUpdate(IFramework framework)
+        {
+            _watcher.Update();
+            _tracker.Update();
+        }
 
         private void DrawUI() => _windowSystem.Draw();
 

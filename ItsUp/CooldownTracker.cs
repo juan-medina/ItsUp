@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Dalamud.Game.ClientState.Conditions;
-using FFXIVClientStructs.FFXIV.Client.Game;
 using Action = Lumina.Excel.Sheets.Action;
 
 namespace ItsUp
@@ -13,6 +11,20 @@ namespace ItsUp
         Ready,
         PressedFading,
         LingerFading
+    }
+
+    public enum DismissReason
+    {
+        Pressed,
+        LingerExpired,
+        CombatEnded
+    }
+
+    public interface ICooldownListener
+    {
+        void OnUpcoming(uint actionId, float secondsLeft);
+        void OnNowUp(uint actionId);
+        void OnDismissed(uint actionId, DismissReason reason);
     }
 
     public class TrackedCooldown
@@ -31,8 +43,6 @@ namespace ItsUp
         public string Name = string.Empty;
         public uint IconId;
 
-        public bool Available;
-
         public float SecondsLeft;
         public const int PressedFadeDuration = 280;
 
@@ -48,25 +58,28 @@ namespace ItsUp
         }
     }
 
-    public class CooldownTracker(Configuration config)
+    public class CooldownTracker(Configuration config) : ICooldownListener
     {
         private readonly Configuration _config = config;
         private readonly List<TrackedCooldown> _cooldowns = [];
         private readonly List<TrackedCooldown> _activeCooldowns = [];
+        private CooldownWatcher? _watcher;
 
         public IReadOnlyList<TrackedCooldown> Cooldowns => _cooldowns;
         public IReadOnlyList<TrackedCooldown> ActiveCooldowns => _activeCooldowns;
+
+        public void SetWatcher(CooldownWatcher watcher) => _watcher = watcher;
 
         public void Sync()
         {
             var sheet = Services.DataManager.GetExcelSheet<Action>()!;
 
-            // remove cooldown we don't track anymore
+            // Remove cooldowns we don't track anymore
             var removed = _cooldowns.RemoveAll(cd => !_config.Tracked.ContainsKey(cd.ActionId));
             if (removed > 0)
                 _activeCooldowns.RemoveAll(cd => !_config.Tracked.ContainsKey(cd.ActionId));
 
-            // are the missing cooldowns on what we need to track
+            // Add missing cooldowns that we need to track
             foreach (var (actionId, settings) in _config.Tracked)
             {
                 if (_cooldowns.Exists(cd => cd.ActionId == actionId)) continue;
@@ -81,91 +94,68 @@ namespace ItsUp
                 Services.Logger.Information($"Added cooldown {actionId} = \"{cd.Name}\" (icon {cd.IconId})");
                 _cooldowns.Add(cd);
             }
+
+            _watcher?.Sync();
         }
 
-        public unsafe void Update()
+        public void OnUpcoming(uint actionId, float secondsLeft)
         {
-            var am = ActionManager.Instance();
-            var player = Services.ObjectTable.LocalPlayer;
-            if (am == null || player == null) return;
+            var cd = _cooldowns.Find(c => c.ActionId == actionId);
+            if (cd == null) return;
 
-            var inCombat = Services.Condition[ConditionFlag.InCombat];
+            cd.SecondsLeft = secondsLeft;
+            if (cd.State != CooldownState.Warming)
+            {
+                if (cd.State == CooldownState.Hidden)
+                    _activeCooldowns.Add(cd);
+                cd.TransitionTo(CooldownState.Warming);
+            }
+        }
+
+        public void OnNowUp(uint actionId)
+        {
+            var cd = _cooldowns.Find(c => c.ActionId == actionId);
+            if (cd == null) return;
+
+            if (cd.State == CooldownState.Hidden)
+                _activeCooldowns.Add(cd);
+            cd.TransitionTo(CooldownState.Ready);
+        }
+
+        public void OnDismissed(uint actionId, DismissReason reason)
+        {
+            var cd = _cooldowns.Find(c => c.ActionId == actionId);
+            if (cd == null) return;
+
+            switch (reason)
+            {
+                case DismissReason.Pressed:
+                    cd.TransitionTo(CooldownState.PressedFading);
+                    break;
+                case DismissReason.LingerExpired:
+                    cd.TransitionTo(CooldownState.LingerFading);
+                    break;
+                case DismissReason.CombatEnded:
+                    cd.TransitionTo(CooldownState.Hidden);
+                    _activeCooldowns.Remove(cd);
+                    break;
+            }
+        }
+
+        public void Update()
+        {
             var now = DateTime.UtcNow;
 
-            foreach (var cd in _cooldowns)
+            for (var i = _activeCooldowns.Count - 1; i >= 0; i--)
             {
-                bool available;
-                if (cd.IsFollowup)
+                var cd = _activeCooldowns[i];
+                if (cd.State == CooldownState.PressedFading || cd.State == CooldownState.LingerFading)
                 {
-                    available = cd.ParentActionId > 0 && am->GetAdjustedActionId(cd.ParentActionId) == cd.ActionId;
-                    cd.SecondsLeft = 0f;
-                }
-                else
-                {
-                    var maxCharges = ActionManager.GetMaxCharges(cd.ActionId, player.Level);
-
-                    // if the action has charges is available if we have one charge
-                    //  else if is not on cd
-                    available = maxCharges > 0
-                        ? am->GetCurrentCharges(cd.ActionId) >= 1
-                        : !am->IsRecastTimerActive(ActionType.Action, cd.ActionId);
-
-                    var total = am->GetRecastTime(ActionType.Action, cd.ActionId);
-                    var elapsed = am->GetRecastTimeElapsed(ActionType.Action, cd.ActionId);
-                    cd.SecondsLeft = Math.Max(0f, total - elapsed);
-                }
-                var wasAvailable = cd.Available;
-                cd.Available = available;
-
-                // Evaluate state transitions
-                var nextState = cd.State;
-
-                if (!inCombat)
-                {
-                    nextState = CooldownState.Hidden;
-                }
-                else
-                {
-                    switch (cd.State)
+                    if ((now - cd.StateEnteredAt).TotalMilliseconds > TrackedCooldown.PressedFadeDuration)
                     {
-                        case CooldownState.Hidden:
-                            if (!available && cd.SecondsLeft > 0f && cd.SecondsLeft <= cd.WarnMs / 1000f)
-                                nextState = CooldownState.Warming;
-                            else if (!wasAvailable && available)
-                                nextState = CooldownState.Ready;
-                            break;
-
-                        case CooldownState.Warming:
-                            if (available)
-                                nextState = CooldownState.Ready;
-                            else if (cd.SecondsLeft > cd.WarnMs / 1000f) // e.g. reset
-                                nextState = CooldownState.Hidden;
-                            break;
-
-                        case CooldownState.Ready:
-                            if (!available)
-                                nextState = CooldownState.PressedFading;
-                            else if (!cd.LingerForever && (now - cd.StateEnteredAt).TotalMilliseconds > cd.LingerMs)
-                                nextState = CooldownState.LingerFading;
-                            break;
-
-                        case CooldownState.PressedFading:
-                        case CooldownState.LingerFading:
-                            if ((now - cd.StateEnteredAt).TotalMilliseconds > TrackedCooldown.PressedFadeDuration)
-                                nextState = CooldownState.Hidden;
-                            break;
+                        cd.TransitionTo(CooldownState.Hidden);
+                        _activeCooldowns.RemoveAt(i);
                     }
-                }
-
-                // Execute transition if changed
-                if (cd.State != nextState)
-                {
-                    if (cd.State == CooldownState.Hidden && nextState != CooldownState.Hidden)
-                        _activeCooldowns.Add(cd);
-                    else if (cd.State != CooldownState.Hidden && nextState == CooldownState.Hidden)
-                        _activeCooldowns.Remove(cd);
-
-                    cd.TransitionTo(nextState);
                 }
             }
         }
