@@ -53,7 +53,6 @@ namespace ItsUp.Windows
                 MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
             };
 
-            // built once here rather in every frame.
             var allActions = Services.DataManager.GetExcelSheet<Action>()!.ToList();
             _actionNames = allActions.ToFrozenDictionary(a => a.RowId, a => a.Name.ToString());
             _actionIcons = allActions.ToFrozenDictionary(a => a.RowId, a => (uint)a.Icon);
@@ -64,49 +63,57 @@ namespace ItsUp.Windows
 
             _jobAbbreviations = _jobs.ToFrozenDictionary(j => j.RowId, j => j.Abbreviation.ToString());
 
-            // Build followup relationships from Lumina ActionIndirection
-            var followupsByBase = new Dictionary<uint, List<uint>>();
-            var isFollowup = new HashSet<uint>();
+            var followupsByBase = BuildFollowupMap(out var isFollowup);
+            _jobActions = BuildJobActions(allActions, followupsByBase, isFollowup);
+            _roleActions = BuildRoleActions(allActions);
+        }
 
-            void AddFollowup(uint baseId, uint childId)
-            {
-                if (baseId == 0 || childId == 0 || baseId == childId) return;
-                if (!followupsByBase.TryGetValue(baseId, out var list))
-                {
-                    list = [];
-                    followupsByBase[baseId] = list;
-                }
-                if (!list.Contains(childId))
-                {
-                    list.Add(childId);
-                    isFollowup.Add(childId);
-                }
-            }
+        private static Dictionary<uint, List<uint>> BuildFollowupMap(out HashSet<uint> isFollowup)
+        {
+            var followups = new Dictionary<uint, List<uint>>();
+            isFollowup = [];
 
             var replaceSheet = Services.DataManager.GetSubrowExcelSheet<ReplaceAction>();
-            if (replaceSheet != null)
+            if (replaceSheet == null) return followups;
+
+            foreach (var subrowCollection in replaceSheet)
             {
-                foreach (var subrowCollection in replaceSheet)
+                foreach (var row in subrowCollection)
                 {
-                    foreach (var row in subrowCollection)
+                    var baseId = row.Action.RowId;
+                    if (baseId == 0) continue;
+
+                    foreach (var targetRef in row.ReplaceActions)
                     {
-                        var baseId = row.Action.RowId;
-                        if (baseId == 0) continue;
-                        foreach (var targetRef in row.ReplaceActions)
+                        var targetId = targetRef.RowId;
+                        if (targetId == 0 || targetId == baseId) continue;
+
+                        if (!followups.TryGetValue(baseId, out var list))
                         {
-                            var targetId = targetRef.RowId;
-                            if (targetId == 0 || targetId == baseId) continue;
-                            AddFollowup(baseId, targetId);
-                            Services.Logger.Information($"[ReplaceAction] Followup: {NameOf(baseId)} ({baseId}) -> {NameOf(targetId)} ({targetId})");
+                            list = [];
+                            followups[baseId] = list;
+                        }
+
+                        if (!list.Contains(targetId))
+                        {
+                            list.Add(targetId);
+                            isFollowup.Add(targetId);
                         }
                     }
                 }
             }
 
+            return followups;
+        }
+
+        private FrozenDictionary<uint, List<ActionItem>> BuildJobActions(
+            List<Action> allActions,
+            Dictionary<uint, List<uint>> followupsByBase,
+            HashSet<uint> isFollowup)
+        {
             var byJob = new Dictionary<uint, List<ActionItem>>();
             foreach (var job in _jobs)
             {
-                // Get non-pvp player actions for that job with a cd bigger than 10s
                 var jobActionIds = allActions
                     .Where(a => !a.IsPvP
                                 && (a.ClassJob.RowId == job.RowId || a.ClassJob.RowId == job.ClassJobParent.RowId)
@@ -114,7 +121,6 @@ namespace ItsUp.Windows
                                 && (a.ActionCategory.RowId == ActionType || a.Recast100ms > 100))
                     .Select(a => a.RowId);
 
-                // remove island sprint and exclude follow-ups from the root list
                 var rootIds = jobActionIds.Where(id => id != IsleSprint && !isFollowup.Contains(id)).ToList();
                 rootIds.Sort(CompareByName);
 
@@ -125,20 +131,28 @@ namespace ItsUp.Windows
                     if (followupsByBase.TryGetValue(rootId, out var children))
                     {
                         foreach (var childId in children)
+                        {
                             items.Add(new ActionItem(childId, rootId));
+                            if (_config.Tracked.TryGetValue(childId, out var existing))
+                                existing.ParentActionId = rootId;
+                        }
                     }
                 }
 
                 byJob[job.RowId] = items;
             }
-            _jobActions = byJob.ToFrozenDictionary();
 
+            return byJob.ToFrozenDictionary();
+        }
+
+        private List<ActionItem> BuildRoleActions(List<Action> allActions)
+        {
             var roleIds = allActions
                 .Where(a => a.IsRoleAction && a.ClassJobLevel != 0)
                 .Select(a => a.RowId)
                 .ToList();
             roleIds.Sort(CompareByName);
-            _roleActions = [.. roleIds.Select(id => new ActionItem(id, 0))];
+            return [.. roleIds.Select(id => new ActionItem(id, 0))];
         }
 
         private int CompareByName(uint lhs, uint rhs) =>
@@ -322,59 +336,75 @@ namespace ItsUp.Windows
 
             foreach (var root in actions.Where(a => !a.IsFollowup))
             {
-                DrawAbilityRow(root.ActionId, isFollowup: false);
+                DrawAbilityRow(root.ActionId, parentActionId: 0);
 
                 foreach (var followup in actions.Where(a => a.ParentActionId == root.ActionId))
                 {
-                    DrawAbilityRow(followup.ActionId, isFollowup: true);
+                    DrawAbilityRow(followup.ActionId, parentActionId: root.ActionId);
                 }
             }
         }
 
-        private void DrawAbilityRow(uint actionId, bool isFollowup)
+        private void DrawAbilityRow(uint actionId, uint parentActionId)
         {
+            var isFollowup = parentActionId != 0;
             using var id = ImRaii.PushId((int)actionId);
             ImGui.TableNextRow();
 
+            var settings = DrawTrackCell(actionId, parentActionId);
+            DrawNameCell(actionId, isFollowup);
+            DrawHeadsUpCell(settings, isFollowup);
+            DrawVisibleCell(settings);
+        }
+
+        private AbilitySettings? DrawTrackCell(uint actionId, uint parentActionId)
+        {
             ImGui.TableNextColumn();
             _config.Tracked.TryGetValue(actionId, out var settings);
             var track = settings != null;
-            if (ImGui.Checkbox("##track", ref track))
-            {
-                if (track)
-                {
-                    settings = new AbilitySettings
-                    {
-                        WarnMs = isFollowup ? 0 : _config.DefaultWarnMs,
-                        LingerMs = _config.DefaultLingerForever ? 0 : _config.DefaultLingerMs,
-                        LingerForever = _config.DefaultLingerForever
-                    };
-                    _config.Tracked[actionId] = settings;
-                }
-                else
-                {
-                    _config.Tracked.Remove(actionId);
-                    settings = null;
-                }
+            if (!ImGui.Checkbox("##track", ref track)) return settings;
 
-                _tracker.Sync();
-                _config.Save();
+            if (track)
+            {
+                var isFollowup = parentActionId != 0;
+                settings = new AbilitySettings
+                {
+                    ParentActionId = parentActionId,
+                    WarnMs = isFollowup ? 0 : _config.DefaultWarnMs,
+                    LingerMs = _config.DefaultLingerForever ? 0 : _config.DefaultLingerMs,
+                    LingerForever = _config.DefaultLingerForever
+                };
+                _config.Tracked[actionId] = settings;
+            }
+            else
+            {
+                _config.Tracked.Remove(actionId);
+                settings = null;
             }
 
+            _tracker.Sync();
+            _config.Save();
+            return settings;
+        }
+
+        private void DrawNameCell(uint actionId, bool isFollowup)
+        {
             ImGui.TableNextColumn();
-            var scale = ImGuiHelpers.GlobalScale;
             if (isFollowup)
             {
-                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 16 * scale);
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 16 * ImGuiHelpers.GlobalScale);
                 TextMuted("↳ ");
                 ImGui.SameLine();
             }
+
             DrawIcon(actionId);
             ImGui.SameLine();
             ImGui.AlignTextToFramePadding();
-
             ImGui.TextUnformatted(NameOf(actionId));
+        }
 
+        private void DrawHeadsUpCell(AbilitySettings? settings, bool isFollowup)
+        {
             ImGui.TableNextColumn();
             if (isFollowup)
             {
@@ -388,19 +418,21 @@ namespace ItsUp.Windows
                 if (DrawSecondsInput("##warn", ref warn)) settings.WarnMs = warn;
                 if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
             }
+        }
 
+        private void DrawVisibleCell(AbilitySettings? settings)
+        {
             ImGui.TableNextColumn();
-            if (settings != null)
+            if (settings == null) return;
+
+            var linger = settings.LingerMs;
+            var lingerForever = settings.LingerForever;
+            if (DrawLingerInput("linger", ref linger, ref lingerForever, _config.DefaultLingerMs, out var commit))
             {
-                var linger = settings.LingerMs;
-                var lingerForever = settings.LingerForever;
-                if (DrawLingerInput("linger", ref linger, ref lingerForever, _config.DefaultLingerMs, out var commit))
-                {
-                    settings.LingerMs = linger;
-                    settings.LingerForever = lingerForever;
-                }
-                if (commit) _config.Save();
+                settings.LingerMs = linger;
+                settings.LingerForever = lingerForever;
             }
+            if (commit) _config.Save();
         }
 
         private static void DrawHeader(int column, string label, string? tooltip)

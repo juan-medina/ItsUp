@@ -18,6 +18,8 @@ namespace ItsUp
         public int WarnMs { get; set; }
         public int LingerMs { get; set; }
         public bool LingerForever { get; set; }
+        public uint ParentActionId { get; set; }
+        public bool IsFollowup => ParentActionId != 0;
     }
 
     [Serializable]
