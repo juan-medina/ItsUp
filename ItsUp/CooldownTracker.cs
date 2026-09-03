@@ -25,6 +25,9 @@ namespace ItsUp
         public int LingerMs => Settings.LingerMs;
         public bool LingerForever => Settings.LingerForever;
 
+        public uint ParentActionId => Settings.ParentActionId;
+        public bool IsFollowup => Settings.IsFollowup;
+
         public string Name = string.Empty;
         public uint IconId;
 
@@ -91,17 +94,26 @@ namespace ItsUp
 
             foreach (var cd in _cooldowns)
             {
-                var maxCharges = ActionManager.GetMaxCharges(cd.ActionId, player.Level);
+                bool available;
+                if (cd.IsFollowup)
+                {
+                    available = cd.ParentActionId > 0 && am->GetAdjustedActionId(cd.ParentActionId) == cd.ActionId;
+                    cd.SecondsLeft = 0f;
+                }
+                else
+                {
+                    var maxCharges = ActionManager.GetMaxCharges(cd.ActionId, player.Level);
 
-                // if the action has charges is available if we have one charge
-                //  else if is not on cd
-                var available = maxCharges > 0
-                    ? am->GetCurrentCharges(cd.ActionId) >= 1
-                    : !am->IsRecastTimerActive(ActionType.Action, cd.ActionId);
+                    // if the action has charges is available if we have one charge
+                    //  else if is not on cd
+                    available = maxCharges > 0
+                        ? am->GetCurrentCharges(cd.ActionId) >= 1
+                        : !am->IsRecastTimerActive(ActionType.Action, cd.ActionId);
 
-                var total = am->GetRecastTime(ActionType.Action, cd.ActionId);
-                var elapsed = am->GetRecastTimeElapsed(ActionType.Action, cd.ActionId);
-                cd.SecondsLeft = Math.Max(0f, total - elapsed);
+                    var total = am->GetRecastTime(ActionType.Action, cd.ActionId);
+                    var elapsed = am->GetRecastTimeElapsed(ActionType.Action, cd.ActionId);
+                    cd.SecondsLeft = Math.Max(0f, total - elapsed);
+                }
                 var wasAvailable = cd.Available;
                 cd.Available = available;
 
