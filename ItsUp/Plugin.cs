@@ -18,7 +18,7 @@ namespace ItsUp
         private const int HorizontalOversample = 2;
         private const int VerticalOversample = 2;
         private const string FontFile = "BebasNeue-Regular.ttf";
-        private static readonly SafeFontConfig FontConfig = new SafeFontConfig
+        private static readonly SafeFontConfig _fontConfig = new()
         {
             SizePx = BakedFontSize,
             OversampleH = HorizontalOversample,
@@ -30,7 +30,6 @@ namespace ItsUp
         private readonly WindowSystem _windowSystem = new("ItsUp");
         private readonly Configuration _config;
         private readonly CooldownTracker _tracker;
-        private readonly CooldownWatcher _watcher;
         private readonly CooldownWindow _window;
         private readonly ConfigWindow _configWindow;
         private readonly string _numberFontPath;
@@ -47,8 +46,6 @@ namespace ItsUp
             _config.Initialize(pluginInterface);
 
             _tracker = new CooldownTracker(_config);
-            _watcher = new CooldownWatcher(_config, _tracker);
-            _tracker.SetWatcher(_watcher);
             _tracker.Sync();
 
             _window = new CooldownWindow(_tracker, _config);
@@ -74,15 +71,11 @@ namespace ItsUp
         {
             if (File.Exists(_numberFontPath))
             {
-                tk.AddFontFromFile(_numberFontPath, FontConfig);
+                tk.AddFontFromFile(_numberFontPath, _fontConfig);
             }
         }
 
-        private void OnUpdate(IFramework framework)
-        {
-            _watcher.Update();
-            _tracker.Update();
-        }
+        private void OnUpdate(IFramework framework) => _tracker.Update();
 
         private void DrawUI() => _windowSystem.Draw();
 
@@ -100,6 +93,7 @@ namespace ItsUp
 
         public void Dispose()
         {
+            _window.Dispose();
             Services.Framework.Update -= OnUpdate;
             _pluginInterface.UiBuilder.OpenMainUi -= OpenConfig;
             _pluginInterface.UiBuilder.OpenConfigUi -= OpenConfig;

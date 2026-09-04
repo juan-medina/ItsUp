@@ -1,16 +1,15 @@
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
-using Lumina.Excel.Sheets;
 
 namespace ItsUp.Windows
 {
-    public class CooldownWindow : Window
+    public class CooldownWindow : Window, IDisposable
     {
         private const float MinIconSize = 24f;
         private const float MaxIconSize = 128f;
@@ -35,12 +34,12 @@ namespace ItsUp.Windows
         private const float PopScale = 1.17f;
 
         private const float PressedShrinkTo = 0.7f;
-        private const float PressedFadeSeconds = TrackedCooldown.PressedFadeDuration / 1000f;
+        private const int PressedFadeDurationMs = 280;
+        private const float PressedFadeSeconds = PressedFadeDurationMs / 1000f;
 
         private const float IconFontSize = 42f;
         private const uint OutlineColour = 0xFF000000;
         private const float OutlineThickness = 1.5f;
-
 
         private const ImGuiWindowFlags LockedFlags =
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoMove |
@@ -53,8 +52,31 @@ namespace ItsUp.Windows
 
         private const uint ColourAnchor = 0xFF00D7FF;
 
+        private enum DisplayState
+        {
+            Warming,
+            Ready,
+            PressedFading,
+            LingerFading
+        }
+
+        private class DisplayEntry
+        {
+            public required TrackedSkill Skill { get; init; }
+            public DisplayState State { get; set; }
+            public DateTime StateEnteredAt { get; set; }
+            public float SecondsLeft { get; set; }
+
+            public void TransitionTo(DisplayState newState)
+            {
+                State = newState;
+                StateEnteredAt = DateTime.UtcNow;
+            }
+        }
+
         private readonly CooldownTracker _cooldowns;
         private readonly Configuration _config;
+        private readonly List<DisplayEntry> _displayList = [];
         private bool _unlocked;
 
         private Vector2 _contentOffset;
@@ -72,11 +94,89 @@ namespace ItsUp.Windows
             : base("It's Up##itsup")
         {
             _cooldowns = cooldowns;
+            _cooldowns.CloseToUp += OnCloseToUp;
+            _cooldowns.Up += OnUp;
+            _cooldowns.Down += OnDown;
+            _cooldowns.Reset += OnReset;
+
             _config = config;
             _lastAnchor = config.Anchor;
             Flags = LockedFlags;
             IsOpen = true;
             RespectCloseHotkey = false;
+        }
+
+        private void OnCloseToUp(TrackedSkill skill, float secondsLeft)
+        {
+            var entry = _displayList.Find(e => e.Skill.ActionId == skill.ActionId);
+            if (entry == null)
+            {
+                entry = new()
+                {
+                    Skill = skill,
+                    State = DisplayState.Warming,
+                    StateEnteredAt = DateTime.UtcNow,
+                    SecondsLeft = secondsLeft
+                };
+                _displayList.Add(entry);
+            }
+            else
+            {
+                entry.SecondsLeft = secondsLeft;
+                if (entry.State != DisplayState.Ready && entry.State != DisplayState.Warming)
+                {
+                    entry.TransitionTo(DisplayState.Warming);
+                }
+            }
+        }
+
+        private void OnUp(TrackedSkill skill)
+        {
+            var entry = _displayList.Find(e => e.Skill.ActionId == skill.ActionId);
+            if (entry == null)
+            {
+                entry = new()
+                {
+                    Skill = skill,
+                    State = DisplayState.Ready,
+                    StateEnteredAt = DateTime.UtcNow,
+                    SecondsLeft = 0f
+                };
+                _displayList.Add(entry);
+            }
+            else
+            {
+                entry.SecondsLeft = 0f;
+                entry.TransitionTo(DisplayState.Ready);
+            }
+        }
+
+        private void OnDown(TrackedSkill skill)
+        {
+            var entry = _displayList.Find(e => e.Skill.ActionId == skill.ActionId);
+            if (entry == null) return;
+
+            if (entry.State == DisplayState.Ready)
+            {
+                // Player pressed it while it was UP
+                entry.TransitionTo(DisplayState.PressedFading);
+            }
+            else if (entry.State == DisplayState.Warming)
+            {
+                // Cancelled or no longer close to up
+                _displayList.Remove(entry);
+            }
+        }
+
+        private void OnReset() => _displayList.Clear();
+
+        public void Dispose()
+        {
+            _cooldowns.CloseToUp -= OnCloseToUp;
+            _cooldowns.Up -= OnUp;
+            _cooldowns.Down -= OnDown;
+            _cooldowns.Reset -= OnReset;
+            GC.SuppressFinalize(this);
         }
 
         public bool Unlocked => _unlocked;
@@ -103,7 +203,7 @@ namespace ItsUp.Windows
             _ => 0f,
         };
 
-        private int IconCount() => _cooldowns.ActiveCooldowns.Count;
+        private int IconCount() => _displayList.Count;
 
         private float ContentWidth(int icons) => icons <= 0 ? IconSize : icons * IconSize + (icons - 1) * IconGap;
 
@@ -195,17 +295,45 @@ namespace ItsUp.Windows
 
             if (_drawIcons)
             {
+                var now = DateTime.UtcNow;
+                for (var i = _displayList.Count - 1; i >= 0; i--)
+                {
+                    var entry = _displayList[i];
+
+                    // 1. Check Linger timeout for Ready entries
+                    if (entry.State == DisplayState.Ready)
+                    {
+                        if (!entry.Skill.Settings.LingerForever)
+                        {
+                            var lingerMs = entry.Skill.Settings.LingerMs;
+                            if ((now - entry.StateEnteredAt).TotalMilliseconds > lingerMs)
+                            {
+                                entry.TransitionTo(DisplayState.LingerFading);
+                            }
+                        }
+                    }
+
+                    // 2. Check Fade completion
+                    if (entry.State is DisplayState.PressedFading or DisplayState.LingerFading)
+                    {
+                        if ((now - entry.StateEnteredAt).TotalMilliseconds > PressedFadeDurationMs)
+                        {
+                            _displayList.RemoveAt(i);
+                            continue;
+                        }
+                    }
+                }
+
                 var drawn = false;
-                foreach (var cd in _cooldowns.ActiveCooldowns)
+                foreach (var entry in _displayList)
                 {
                     if (drawn) ImGui.SameLine(0, IconGap);
                     drawn = true;
 
-                    DrawEntry(drawList, cd, IconSize);
+                    DrawEntry(drawList, entry, IconSize);
                 }
             }
         }
-
 
         private void DrawSlotPreview(ImDrawListPtr drawList, Vector2 pos)
         {
@@ -245,21 +373,25 @@ namespace ItsUp.Windows
                 _resizing ? ColourText : ColourAnchor);
         }
 
-
         private void HandleResize(Vector2 slotOrigin)
         {
-            var handleMin = slotOrigin + new Vector2(IconSize - ResizeHandleSize, IconSize - ResizeHandleSize);
-            var handleMax = slotOrigin + new Vector2(IconSize, IconSize);
+            var gripPos = slotOrigin + new Vector2(IconSize - ResizeHandleSize, IconSize - ResizeHandleSize);
+            var mousePos = ImGui.GetIO().MousePos;
+            var mouseInGrip = mousePos.X >= gripPos.X && mousePos.X <= slotOrigin.X + IconSize
+                           && mousePos.Y >= gripPos.Y && mousePos.Y <= slotOrigin.Y + IconSize;
 
-            if (!_resizing && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && ImGui.IsMouseHoveringRect(handleMin, handleMax))
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && mouseInGrip)
                 _resizing = true;
 
             if (_resizing)
             {
                 var delta = ImGui.GetIO().MouseDelta;
-                if (delta != Vector2.Zero)
+                var rawNewSize = _config.IconSize + (delta.X + delta.Y) * 0.5f;
+                var clamped = Math.Clamp(rawNewSize, MinIconSize, MaxIconSize);
+
+                if (Math.Abs(clamped - _config.IconSize) > 0.01f)
                 {
-                    _config.IconSize = Math.Clamp(_config.IconSize + (delta.X + delta.Y) / 2f, MinIconSize, MaxIconSize);
+                    _config.IconSize = clamped;
                     _sizeDirty = true;
                 }
             }
@@ -268,17 +400,13 @@ namespace ItsUp.Windows
 
             _resizing = false;
 
-            // Save on release rather than every frame of the drag.
             if (!_sizeDirty) return;
             _config.Save();
             _sizeDirty = false;
         }
 
-
         private void HandleDrag()
         {
-            // IsWindowHovered rather than a rectangle test, so clicking the settings window where it
-            // overlaps the panel does not grab the panel underneath.
             if (!_dragging && !_resizing && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && ImGui.IsWindowHovered())
                 _dragging = true;
 
@@ -303,7 +431,6 @@ namespace ItsUp.Windows
             _anchorDirty = false;
         }
 
-
         private void HandleDirectionCycle()
         {
             if (!ImGui.IsWindowHovered() || !ImGui.IsMouseClicked(ImGuiMouseButton.Right)) return;
@@ -316,31 +443,31 @@ namespace ItsUp.Windows
             };
         }
 
-        private static void DrawEntry(ImDrawListPtr drawList, TrackedCooldown cd, float iconSize)
+        private static void DrawEntry(ImDrawListPtr drawList, DisplayEntry entry, float iconSize)
         {
             var pos = ImGui.GetCursorScreenPos();
             var size = new Vector2(iconSize, iconSize);
             var scale = iconSize / Configuration.DefaultIconSize;
 
             IDalamudTextureWrap? wrap = null;
-            if (Services.TextureProvider.TryGetFromGameIcon(cd.IconId, out var texture))
+            if (Services.TextureProvider.TryGetFromGameIcon(entry.Skill.IconId, out var texture))
                 texture.TryGetWrap(out wrap, out _);
 
             ImGui.Dummy(size);
 
-            if (cd.State == CooldownState.Ready)
+            if (entry.State == DisplayState.Ready)
             {
-                var popScale = PopScaleFor(cd.StateEnteredAt);
+                var popScale = PopScaleFor(entry.StateEnteredAt);
                 DrawScaledIcon(drawList, wrap, pos, size, popScale, 1f);
                 DrawReadyBorder(drawList, pos, size, scale, popScale);
                 return;
             }
 
-            if (cd.State == CooldownState.Warming)
+            if (entry.State == DisplayState.Warming)
             {
                 DrawScaledIcon(drawList, wrap, pos, size, 1f, 1f);
-                DrawWarmingWipe(drawList, pos, size, cd);
-                var label = Math.Ceiling(cd.SecondsLeft).ToString("0");
+                DrawWarmingWipe(drawList, pos, size, entry.Skill.WarnMs, entry.SecondsLeft);
+                var label = Math.Ceiling(entry.SecondsLeft).ToString("0");
                 var useFont = Plugin.NumberFont?.Available == true;
                 if (useFont) Plugin.NumberFont!.Push();
 
@@ -361,10 +488,9 @@ namespace ItsUp.Windows
                 return;
             }
 
-            if (cd.State is CooldownState.PressedFading or CooldownState.LingerFading)
-                DrawPressed(drawList, wrap, pos, size, cd);
+            if (entry.State is DisplayState.PressedFading or DisplayState.LingerFading)
+                DrawPressed(drawList, wrap, pos, size, entry.State, entry.StateEnteredAt);
         }
-
 
         private static uint WithAlpha(uint colour, float alpha01) =>
             (colour & 0x00FFFFFF) | ((uint)(Math.Clamp(alpha01, 0f, 1f) * 255f) << 24);
@@ -392,10 +518,10 @@ namespace ItsUp.Windows
             drawList.PathFillConvex(colour);
         }
 
-        private static void DrawWarmingWipe(ImDrawListPtr drawList, Vector2 pos, Vector2 size, TrackedCooldown cd)
+        private static void DrawWarmingWipe(ImDrawListPtr drawList, Vector2 pos, Vector2 size, int warnMs, float secondsLeft)
         {
-            var warnSeconds = cd.WarnMs / 1000f;
-            var fraction = warnSeconds > 0f ? Math.Clamp(cd.SecondsLeft / warnSeconds, 0f, 1f) : 0f;
+            var warnSeconds = warnMs / 1000f;
+            var fraction = warnSeconds > 0f ? Math.Clamp(secondsLeft / warnSeconds, 0f, 1f) : 0f;
 
             var centre = pos + size / 2f;
             var radius = size.X * 0.75f;
@@ -405,7 +531,7 @@ namespace ItsUp.Windows
             drawList.PushClipRect(pos, pos + size, true);
             DrawPieWedge(drawList, centre, radius, start, end, ColourDim);
 
-            var brightness = WarmingPulseBrightness(cd.SecondsLeft);
+            var brightness = WarmingPulseBrightness(secondsLeft);
             if (brightness > 0f)
                 DrawPieWedge(drawList, centre, radius, start, end, WithAlpha(ColourText, brightness * 0.5f));
 
@@ -455,17 +581,11 @@ namespace ItsUp.Windows
 
         private static void DrawReadyBorder(ImDrawListPtr drawList, Vector2 pos, Vector2 size, float scale, float popScale)
         {
-            var breath = (MathF.Sin((float)ImGui.GetTime() * MathF.Tau / BreathPeriodSeconds) + 1f) * 0.5f;
+            var breath = (MathF.Sin((float)ImGui.GetTime() / BreathPeriodSeconds * MathF.Tau) + 1f) * 0.5f;
+            var alpha = 0.5f + 0.5f * breath;
 
-            var scaledSize = size * popScale;
-            var scaledPos = pos + (size - scaledSize) / 2f;
-            var lineThickness = (1.5f + breath) * scale;
-
-            drawList.AddRect(scaledPos, scaledPos + scaledSize, WithAlpha(ColourReady, 0.55f + 0.45f * breath), 3f * scale,
-                ImDrawFlags.None, lineThickness);
-            DrawMarchingAnts(drawList, pos, size, 0.7f + 0.3f * breath, scale, popScale);
+            DrawMarchingAnts(drawList, pos, size, alpha, scale, popScale);
         }
-
 
         private static float PopScaleFor(DateTime? readySince)
         {
@@ -480,14 +600,14 @@ namespace ItsUp.Windows
         private static float EaseOutCubic(float t) => 1f - MathF.Pow(1f - t, 3f);
 
         private static void DrawPressed(
-            ImDrawListPtr drawList, IDalamudTextureWrap? wrap, Vector2 pos, Vector2 size, TrackedCooldown cd)
+            ImDrawListPtr drawList, IDalamudTextureWrap? wrap, Vector2 pos, Vector2 size, DisplayState state, DateTime stateEnteredAt)
         {
-            var t = Math.Clamp((float)(DateTime.UtcNow - cd.StateEnteredAt).TotalSeconds / PressedFadeSeconds, 0f, 1f);
+            var t = Math.Clamp((float)(DateTime.UtcNow - stateEnteredAt).TotalSeconds / PressedFadeSeconds, 0f, 1f);
             var eased = EaseOutCubic(t);
 
             DrawScaledIcon(drawList, wrap, pos, size, 1f - (1f - PressedShrinkTo) * eased, 1f - eased);
 
-            if (cd.State == CooldownState.PressedFading)
+            if (state == DisplayState.PressedFading)
                 drawList.AddRectFilled(pos, pos + size, WithAlpha(ColourPressedFlash, (1f - eased) * 0.6f), 3f);
         }
     }
