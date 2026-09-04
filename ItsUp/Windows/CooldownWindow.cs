@@ -196,7 +196,7 @@ namespace ItsUp.Windows
 
         private float IconGap => IconSize / 8f;
 
-        private float AnchorFactor => _config.Anchor switch
+        private static float FactorFor(BarAnchor anchor) => anchor switch
         {
             BarAnchor.Centre => 0.5f,
             BarAnchor.Right => 1f,
@@ -227,7 +227,7 @@ namespace ItsUp.Windows
             KeepBarStillWhenAnchorChanges(width);
 
             // anchor the window
-            var origin = new Vector2(_config.AnchorX - AnchorFactor * width, _config.AnchorY);
+            var origin = new Vector2(_config.AnchorX - FactorFor(_config.Anchor) * width, _config.AnchorY);
             ImGui.SetNextWindowPos(origin - _contentOffset, ImGuiCond.Always);
         }
 
@@ -262,14 +262,7 @@ namespace ItsUp.Windows
         {
             if (_config.Anchor == _lastAnchor) return;
 
-            var previous = _lastAnchor switch
-            {
-                BarAnchor.Centre => 0.5f,
-                BarAnchor.Right => 1f,
-                _ => 0f,
-            };
-
-            _config.AnchorX += (AnchorFactor - previous) * width;
+            _config.AnchorX += (FactorFor(_config.Anchor) - FactorFor(_lastAnchor)) * width;
             _lastAnchor = _config.Anchor;
             _config.Save();
         }
