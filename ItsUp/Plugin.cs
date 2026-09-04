@@ -84,12 +84,10 @@ namespace ItsUp
         private void OnCommand(string command, string args)
         {
             if (args.Trim().Equals("move", StringComparison.OrdinalIgnoreCase))
-                ToggleLock();
+                _window.ToggleLock();
             else
                 OpenConfig();
         }
-
-        private void ToggleLock() => _window.ToggleLock();
 
         public void Dispose()
         {
