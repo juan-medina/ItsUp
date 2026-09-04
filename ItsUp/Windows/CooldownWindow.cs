@@ -60,6 +60,13 @@ namespace ItsUp.Windows
             LingerFading
         }
 
+        private enum DrawMode
+        {
+            Nothing,
+            Anchor,
+            Icons
+        }
+
         private class DisplayEntry
         {
             public required TrackedSkill Skill { get; init; }
@@ -87,8 +94,7 @@ namespace ItsUp.Windows
         private bool _resizing;
         private bool _sizeDirty;
 
-        private bool _drawIcons;
-        private bool _drawAnchor;
+        private DrawMode _drawMode;
 
         public CooldownWindow(CooldownTracker cooldowns, Configuration config)
             : base("It's Up##itsup")
@@ -211,15 +217,16 @@ namespace ItsUp.Windows
         {
             var inCombat = Services.Condition[ConditionFlag.InCombat];
 
-            _drawAnchor = !inCombat && _unlocked;
-            _drawIcons = inCombat && !_unlocked;
+            _drawMode = (!inCombat && _unlocked) ? DrawMode.Anchor
+                      : (inCombat && !_unlocked)  ? DrawMode.Icons
+                      : DrawMode.Nothing;
             var needUnlock = _unlocked && inCombat;
 
             // if we are unlocked and in combat we need to lock
             if (needUnlock) SetLock(false);
 
             // nothing to draw
-            if (!_drawAnchor && !_drawIcons) return;
+            if (_drawMode == DrawMode.Nothing) return;
 
             EnsureAnchorPlaced();
 
@@ -270,13 +277,13 @@ namespace ItsUp.Windows
         public override void Draw()
         {
             // nothing to draw
-            if (!_drawAnchor && !_drawIcons) return;
+            if (_drawMode == DrawMode.Nothing) return;
 
             var drawList = ImGui.GetWindowDrawList();
             var origin = ImGui.GetCursorScreenPos();
             _contentOffset = origin - ImGui.GetWindowPos();
 
-            if (_drawAnchor)
+            if (_drawMode == DrawMode.Anchor)
             {
                 ImGui.Dummy(new Vector2(IconSize, IconSize));
                 DrawSlotPreview(drawList, origin);
@@ -286,7 +293,7 @@ namespace ItsUp.Windows
                 return;
             }
 
-            if (_drawIcons)
+            if (_drawMode == DrawMode.Icons)
             {
                 var now = DateTime.UtcNow;
                 for (var i = _displayList.Count - 1; i >= 0; i--)
