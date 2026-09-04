@@ -332,15 +332,8 @@ namespace ItsUp.Windows
             DrawHeader(2, "Heads-up", "How long before the ability will show.");
             DrawHeader(3, "Visible", "How long the reminder stays on screen.");
 
-            foreach (var root in actions.Where(a => !a.IsFollowup))
-            {
-                DrawAbilityRow(root.ActionId, parentActionId: 0);
-
-                foreach (var followup in actions.Where(a => a.ParentActionId == root.ActionId))
-                {
-                    DrawAbilityRow(followup.ActionId, parentActionId: root.ActionId);
-                }
-            }
+            foreach (var item in actions)
+                DrawAbilityRow(item.ActionId, item.ParentActionId);
         }
 
         private void DrawAbilityRow(uint actionId, uint parentActionId)
