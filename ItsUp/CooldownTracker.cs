@@ -80,7 +80,8 @@ namespace ItsUp
                 foreach (var skill in _skills)
                 {
                     var (isUp, _) = EvaluateAbility(am, (byte)player.Level, skill);
-                    skill.Available = isUp;
+                    // Follow-ups are never passively available — they require the parent to be used
+                    skill.Available = skill.IsFollowup ? false : isUp;
                     if (skill.Status != SkillStatus.Down)
                     {
                         skill.Status = SkillStatus.Down;
