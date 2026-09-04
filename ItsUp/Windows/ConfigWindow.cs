@@ -25,8 +25,7 @@ namespace ItsUp.Windows
             public bool IsFollowup => ParentActionId != 0;
         }
 
-        private readonly FrozenDictionary<uint, string> _actionNames;
-        private readonly FrozenDictionary<uint, uint> _actionIcons;
+        private readonly FrozenDictionary<uint, (string Name, uint Icon)> _actionInfo;
         private readonly FrozenDictionary<uint, string> _jobAbbreviations;
         private readonly FrozenDictionary<uint, List<ActionItem>> _jobActions;
         private readonly List<ActionItem> _roleActions;
@@ -54,8 +53,7 @@ namespace ItsUp.Windows
             };
 
             var allActions = Services.DataManager.GetExcelSheet<Action>()!.ToList();
-            _actionNames = allActions.ToFrozenDictionary(a => a.RowId, a => a.Name.ToString());
-            _actionIcons = allActions.ToFrozenDictionary(a => a.RowId, a => (uint)a.Icon);
+            _actionInfo = allActions.ToFrozenDictionary(a => a.RowId, a => (a.Name.ToString(), (uint)a.Icon));
 
             _jobs = [.. Services.DataManager.GetExcelSheet<ClassJob>()!
                 .Where(j => j.Role > 0 && j.ItemSoulCrystal.Value.RowId > 0)
@@ -159,7 +157,7 @@ namespace ItsUp.Windows
             string.Compare(NameOf(lhs), NameOf(rhs), StringComparison.Ordinal);
 
         private string NameOf(uint actionId) =>
-            _actionNames.TryGetValue(actionId, out var name) && name.Length > 0 ? name : $"#{actionId}";
+            _actionInfo.TryGetValue(actionId, out var info) && info.Name.Length > 0 ? info.Name : $"#{actionId}";
 
         private void SelectCurrentJob()
         {
@@ -445,8 +443,8 @@ namespace ItsUp.Windows
         private void DrawIcon(uint actionId)
         {
             var size = new Vector2(ImGui.GetFrameHeight());
-            if (_actionIcons.TryGetValue(actionId, out var iconId) &&
-                Services.TextureProvider.TryGetFromGameIcon(iconId, out var texture) &&
+            if (_actionInfo.TryGetValue(actionId, out var info) &&
+                Services.TextureProvider.TryGetFromGameIcon(info.Icon, out var texture) &&
                 texture.TryGetWrap(out var wrap, out _))
                 ImGui.Image(wrap.Handle, size);
             else
