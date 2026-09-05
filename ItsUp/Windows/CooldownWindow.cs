@@ -22,9 +22,6 @@ namespace ItsUp.Windows
         private const uint ColourText = 0xFFFFFFFF;
         private const uint ColourPressedFlash = 0xFF33DD33;
 
-        private const float PulseFinalWindowSeconds = 1f;
-        private const float PulseFreqMinHz = 2f;
-        private const float PulseFreqMaxHz = 9f;
 
         private const float AntSpacingPx = 8f;
         private const float AntRadius = 1.6f;
@@ -535,21 +532,7 @@ namespace ItsUp.Windows
             drawList.PushClipRect(pos, pos + size, true);
             DrawPieWedge(drawList, centre, radius, start, end, ColourDim);
 
-            var brightness = WarmingPulseBrightness(secondsLeft);
-            if (brightness > 0f)
-                DrawPieWedge(drawList, centre, radius, start, end, WithAlpha(ColourText, brightness * 0.5f));
-
             drawList.PopClipRect();
-        }
-
-        private static float WarmingPulseBrightness(float secondsLeft)
-        {
-            if (secondsLeft > PulseFinalWindowSeconds || secondsLeft < 0f) return 0f;
-
-            var urgency = 1f - secondsLeft / PulseFinalWindowSeconds;
-            var freqHz = PulseFreqMinHz + (PulseFreqMaxHz - PulseFreqMinHz) * urgency;
-            var wave = (MathF.Sin((float)ImGui.GetTime() * freqHz * MathF.Tau) + 1f) * 0.5f;
-            return wave * urgency;
         }
 
         private static Vector2 PerimeterPoint(Vector2 pos, Vector2 size, float d)
