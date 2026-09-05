@@ -55,7 +55,7 @@ namespace ItsUp
 
             Services.CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
             {
-                HelpMessage = "Open settings.\n/itsup move → Unlocks the panel so you can drag it."
+                HelpMessage = Strings.Command.HelpMessage
             });
 
             _pluginInterface.UiBuilder.Draw += DrawUI;

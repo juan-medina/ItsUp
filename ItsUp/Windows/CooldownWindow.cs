@@ -344,7 +344,7 @@ namespace ItsUp.Windows
             var size = new Vector2(IconSize, IconSize);
             drawList.AddRect(pos, pos + size, ColourAnchor, 3f);
 
-            const string label = "It's Up";
+            var label = Strings.SlotPreviewLabel;
             var textSize = ImGui.CalcTextSize(label);
             drawList.AddText(new Vector2(pos.X + (IconSize - textSize.X) / 2f, pos.Y + 6f), ColourText, label);
 

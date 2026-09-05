@@ -193,17 +193,15 @@ namespace ItsUp.Windows
         private void DrawDefaults()
         {
             ImGui.AlignTextToFramePadding();
-            ImGui.TextUnformatted("New abilities start with");
+            ImGui.TextUnformatted(Strings.Config.DefaultsPrefix);
             ImGui.SameLine();
 
-            ImGui.TextUnformatted("heads-up");
-            ImGui.SameLine();
             var warn = _config.DefaultWarnMs;
             if (DrawSecondsInput("##default#warn", ref warn)) _config.DefaultWarnMs = warn;
             if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
 
             ImGui.SameLine();
-            ImGui.TextUnformatted("visible");
+            ImGui.TextUnformatted(Strings.Config.DefaultsMiddle);
             ImGui.SameLine();
             var linger = _config.DefaultLingerMs;
             var lingerForever = _config.DefaultLingerForever;
@@ -217,21 +215,21 @@ namespace ItsUp.Windows
             TextMuted(Describe(_config.DefaultWarnMs, _config.DefaultLingerMs, _config.DefaultLingerForever));
 
             ImGui.AlignTextToFramePadding();
-            ImGui.TextUnformatted("Panel anchor");
+            ImGui.TextUnformatted(Strings.Config.GrowthDirectionLabel);
             ImGui.SameLine();
 
             var anchor = (int)_config.Anchor;
             ImGui.SetNextItemWidth(110 * ImGuiHelpers.GlobalScale);
-            if (ImGui.Combo("##anchor", ref anchor, "Left\0Centre\0Right\0"))
+            if (ImGui.Combo("##anchor", ref anchor, Strings.Config.GrowthDirectionItems))
             {
                 _config.Anchor = (BarAnchor)anchor;
                 _config.Save();
             }
-            Tooltip("The panel stays pinned as icons flows from the anchor.");
+            Tooltip(Strings.Config.GrowthDirectionTooltip);
 
             ImGui.SameLine();
             var unlocked = _panel.Unlocked;
-            if (ImGui.Checkbox("Unlock to move", ref unlocked))
+            if (ImGui.Checkbox(Strings.Config.Unlock, ref unlocked))
             {
                 if (unlocked)
                 {
@@ -243,11 +241,11 @@ namespace ItsUp.Windows
                     _panel.SetLock(false);
                 }
             }
-            Tooltip("Unlocks the panel so you can drag the anchor and resize it. Same as /itsup.");
+            Tooltip(Strings.Config.UnlockTooltip);
 
             ImGui.SameLine();
             var preview = _tracker.IsPreview;
-            if (ImGui.Checkbox("Preview bar", ref preview))
+            if (ImGui.Checkbox(Strings.Config.Preview, ref preview))
             {
                 if (preview)
                 {
@@ -259,23 +257,23 @@ namespace ItsUp.Windows
                     _tracker.StopPreview();
                 }
             }
-            Tooltip("Simulates dynamic ability events to preview the popup bar.");
+            Tooltip(Strings.Config.PreviewTooltip);
 
             ImGui.SameLine();
-            if (ImGui.Button("Reset panel"))
+            if (ImGui.Button(Strings.Config.ResetPosition))
                 _panel.ResetPanel();
-            Tooltip("Restores the default icon size and position.");
+            Tooltip(Strings.Config.ResetPositionTooltip);
         }
 
         private static string Describe(int warnMs, int lingerMs, bool lingerForever)
         {
             var warn = warnMs > 0
-                ? $"A dimmed countdown appears {Seconds(warnMs)}s before it comes back"
-                : "No countdown before it comes back";
+                ? string.Format(Strings.Describe.WarnTemplate, Seconds(warnMs))
+                : Strings.Describe.WarnNone;
 
             var linger = lingerForever
-                ? "the reminder stays until you press it."
-                : $"the reminder clears itself {Seconds(lingerMs)}s later.";
+                ? Strings.Describe.LingerForever
+                : string.Format(Strings.Describe.LingerTemplate, Seconds(lingerMs));
 
             return $"{warn}, then {linger}";
         }
@@ -299,14 +297,14 @@ namespace ItsUp.Windows
 
             var mode = forever ? 1 : 0;
             ImGui.SetNextItemWidth(120 * ImGuiHelpers.GlobalScale);
-            if (ImGui.Combo($"##{id}mode", ref mode, "for\0until pressed\0"))
+            if (ImGui.Combo($"##{id}mode", ref mode, Strings.Table.LingerDropdownItems))
             {
                 forever = mode == 1;
                 if (!forever && ms <= 0) ms = fallbackMs;
                 changed = true;
                 commit = true;
             }
-            Tooltip("\"Until pressed\" keeps it visible until you press it again.");
+            Tooltip(Strings.Table.LingerDropdownTooltip);
 
             if (!forever)
             {
@@ -353,15 +351,15 @@ namespace ItsUp.Windows
 
             var scale = ImGuiHelpers.GlobalScale;
             ImGui.TableSetupColumn("##track", ImGuiTableColumnFlags.WidthFixed);
-            ImGui.TableSetupColumn("Ability", ImGuiTableColumnFlags.WidthStretch);
-            ImGui.TableSetupColumn("Heads-up", ImGuiTableColumnFlags.WidthFixed, 78 * scale);
-            ImGui.TableSetupColumn("Visible", ImGuiTableColumnFlags.WidthFixed, 220 * scale);
+            ImGui.TableSetupColumn(Strings.Table.ColumnAbility, ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn(Strings.Table.ColumnHeadsUp, ImGuiTableColumnFlags.WidthFixed, 78 * scale);
+            ImGui.TableSetupColumn(Strings.Table.ColumnVisible, ImGuiTableColumnFlags.WidthFixed, 220 * scale);
 
             ImGui.TableNextRow(ImGuiTableRowFlags.Headers);
             DrawHeader(0, "##track", null);
-            DrawHeader(1, "Ability", null);
-            DrawHeader(2, "Heads-up", "How long before the ability will show.");
-            DrawHeader(3, "Visible", "How long the reminder stays on screen.");
+            DrawHeader(1, Strings.Table.ColumnAbility, null);
+            DrawHeader(2, Strings.Table.ColumnHeadsUp, Strings.Table.HeadsUpTooltip);
+            DrawHeader(3, Strings.Table.ColumnVisible, Strings.Table.VisibleTooltip);
 
             foreach (var item in actions)
                 DrawAbilityRow(item.ActionId, item.ParentActionId);
@@ -432,7 +430,7 @@ namespace ItsUp.Windows
             {
                 ImGui.AlignTextToFramePadding();
                 TextMuted("(?)");
-                Tooltip("Follow-up actions become available when their trigger ability is used,\nso a countdown before return does not apply.");
+                Tooltip(Strings.Table.FollowUpTooltip);
             }
             else if (settings != null)
             {
