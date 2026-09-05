@@ -170,7 +170,11 @@ namespace ItsUp.Windows
 
         public override void OnOpen() => SelectCurrentJob();
 
-        public override void OnClose() => _config.Save();
+        public override void OnClose()
+        {
+            _tracker.StopPreview();
+            _config.Save();
+        }
 
         public override void Draw()
         {
@@ -226,9 +230,36 @@ namespace ItsUp.Windows
             Tooltip("The panel stays pinned as icons flows from the anchor.");
 
             ImGui.SameLine();
-            if (ImGui.Button(_panel.Unlocked ? "Lock panel" : "Move panel"))
-                _panel.ToggleLock();
-            Tooltip(_panel.Unlocked ? "Unlocked, click to locked" : "Locked, click to unlock and move and drag the panel" + ".Same as /itsup.");
+            var unlocked = _panel.Unlocked;
+            if (ImGui.Checkbox("Unlock to move", ref unlocked))
+            {
+                if (unlocked)
+                {
+                    _tracker.StopPreview();
+                    _panel.SetLock(true);
+                }
+                else
+                {
+                    _panel.SetLock(false);
+                }
+            }
+            Tooltip("Unlocks the panel so you can drag the anchor and resize it. Same as /itsup.");
+
+            ImGui.SameLine();
+            var preview = _tracker.IsPreview;
+            if (ImGui.Checkbox("Preview bar", ref preview))
+            {
+                if (preview)
+                {
+                    _panel.SetLock(false);
+                    _tracker.TogglePreview();
+                }
+                else
+                {
+                    _tracker.StopPreview();
+                }
+            }
+            Tooltip("Simulates dynamic ability events to preview the popup bar.");
 
             ImGui.SameLine();
             if (ImGui.Button("Reset panel"))

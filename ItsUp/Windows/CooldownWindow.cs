@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Conditions;
@@ -191,6 +192,9 @@ namespace ItsUp.Windows
 
         public void SetLock(bool unlocked)
         {
+            if (unlocked && _cooldowns.IsPreview)
+                _cooldowns.StopPreview();
+
             _unlocked = unlocked;
             Flags = _unlocked ? UnlockedFlags : LockedFlags;
             IsOpen = true;
@@ -215,7 +219,7 @@ namespace ItsUp.Windows
 
         public override void PreDraw()
         {
-            var inCombat = Services.Condition[ConditionFlag.InCombat];
+            var inCombat = Services.Condition[ConditionFlag.InCombat] || _cooldowns.IsPreview;
 
             _drawMode = (!inCombat && _unlocked) ? DrawMode.Anchor
                       : (inCombat && !_unlocked)  ? DrawMode.Icons
