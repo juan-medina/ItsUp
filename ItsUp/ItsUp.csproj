@@ -18,6 +18,7 @@ It's perfect for those key rotational abilities you really don't want to drift. 
 /itsup move → Unlock the bar to reposition it.
     </Description>
     <RepoUrl>https://github.com/juan-medina/ItsUp</RepoUrl>
+    <IconUrl>https://raw.githubusercontent.com/juan-medina/ItsUp/main/ItsUp/icon.png</IconUrl>
     <Tags>combat;cooldown;reminder;hud</Tags>
   </PropertyGroup>
 
