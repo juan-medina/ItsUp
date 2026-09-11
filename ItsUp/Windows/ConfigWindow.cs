@@ -20,7 +20,7 @@ namespace ItsUp.Windows
         private ConfigTab? _requestedTab;
 
         public ConfigWindow(Configuration config, CooldownTracker tracker, CooldownWindow panel, JobActionRegistry registry, HotbarKeybindResolver keybindResolver)
-            : base("It's Up — Settings##its#up#config", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
+            : base("It's Up — Config##its#up#config", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
         {
             _config = config;
             _tracker = tracker;

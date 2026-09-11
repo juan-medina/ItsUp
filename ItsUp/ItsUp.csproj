@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.6.0.0</Version>
+    <Version>0.7.0.0</Version>
     <Author>Juan Medina</Author>
     <Name>It's Up</Name>
     <Punchline>Yes. Still up. Press it.</Punchline>

@@ -118,7 +118,7 @@ namespace ItsUp
         internal static class Command
         {
             internal const string HelpMessage =
-                "Open settings.\n" +
+                "Open config.\n" +
                 "/itsup move \u2192 Unlock the bar to reposition it.\n" +
                 "/itsup preview \u2192 Toggle preview mode.\n" +
                 "/itsup reset \u2192 Reset the bar position and size.";

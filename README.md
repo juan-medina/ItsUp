@@ -27,5 +27,9 @@ It's perfect for those key rotational abilities you really don't want to drift. 
 
 Everything else — filters, timing meanings, panel positioning — is explained in the settings window itself.
 
-<p align="center"><img src="docs/settings.png" alt="The settings window, showing tracked White Mage abilities with their heads-up and stays-up timings"></p>
+<p align="center"><img src="docs/config-1.jpg" alt="The config window, showing the Welcome tab"><br><i>Config: Welcome tab</i></p>
+
+<p align="center"><img src="docs/config-2.jpg" alt="The config window, showing the Job Actions tab"><br><i>Config: Job Actions tab</i></p>
+
+<p align="center"><img src="docs/config-3.jpg" alt="The config window, showing the Settings tab"><br><i>Config: Settings tab</i></p>
 
