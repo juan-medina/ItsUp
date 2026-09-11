@@ -28,6 +28,10 @@ namespace ItsUp
             internal const string PreviewTooltip =
                 "Runs a simulated combat loop so you can see the bar in action. /itsup preview";
 
+            internal const string ShowAnts = "Marching ants";
+            internal const string ShowAntsTooltip =
+                "Show animated marching ants border around ready abilities.";
+
             // --- Reset ---
             internal const string Reset = "Reset";
             internal const string ResetTooltip =

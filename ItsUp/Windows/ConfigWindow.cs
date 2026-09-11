@@ -147,6 +147,15 @@ namespace ItsUp.Windows
             Tooltip(Strings.Config.PreviewTooltip);
 
             ImGui.SameLine();
+            var showAnts = _config.ShowAnts;
+            if (ImGui.Checkbox(Strings.Config.ShowAnts, ref showAnts))
+            {
+                _config.ShowAnts = showAnts;
+                _config.Save();
+            }
+            Tooltip(Strings.Config.ShowAntsTooltip);
+
+            ImGui.SameLine();
             if (ImGui.Button(Strings.Config.Reset))
                 _panel.ResetPanel();
             Tooltip(Strings.Config.ResetTooltip);

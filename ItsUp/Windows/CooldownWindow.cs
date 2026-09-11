@@ -331,7 +331,7 @@ namespace ItsUp.Windows
                     if (drawn) ImGui.SameLine(0, IconGap);
                     drawn = true;
 
-                    DrawEntry(drawList, entry, IconSize);
+                    DrawEntry(drawList, entry, IconSize, _config.ShowAnts);
                 }
             }
         }
@@ -445,7 +445,7 @@ namespace ItsUp.Windows
             };
         }
 
-        private static void DrawEntry(ImDrawListPtr drawList, DisplayEntry entry, float iconSize)
+        private static void DrawEntry(ImDrawListPtr drawList, DisplayEntry entry, float iconSize, bool showAnts)
         {
             var pos = ImGui.GetCursorScreenPos();
             var size = new Vector2(iconSize, iconSize);
@@ -461,7 +461,8 @@ namespace ItsUp.Windows
             {
                 var popScale = PopScaleFor(entry.StateEnteredAt);
                 DrawScaledIcon(drawList, wrap, pos, size, popScale, 1f);
-                DrawReadyBorder(drawList, pos, size, scale, popScale);
+                if (showAnts)
+                    DrawReadyBorder(drawList, pos, size, scale, popScale);
                 return;
             }
 
