@@ -156,6 +156,15 @@ namespace ItsUp.Windows
             Tooltip(Strings.Config.ShowAntsTooltip);
 
             ImGui.SameLine();
+            var onlyInDuties = _config.OnlyInDuties;
+            if (ImGui.Checkbox(Strings.Config.OnlyInDuties, ref onlyInDuties))
+            {
+                _config.OnlyInDuties = onlyInDuties;
+                _config.Save();
+            }
+            Tooltip(Strings.Config.OnlyInDutiesTooltip);
+
+            ImGui.SameLine();
             if (ImGui.Button(Strings.Config.Reset))
                 _panel.ResetPanel();
             Tooltip(Strings.Config.ResetTooltip);

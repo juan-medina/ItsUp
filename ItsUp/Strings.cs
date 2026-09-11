@@ -32,6 +32,11 @@ namespace ItsUp
             internal const string ShowAntsTooltip =
                 "Show animated marching ants border around ready abilities.";
 
+            internal const string OnlyInDuties = "Only in duties";
+            internal const string OnlyInDutiesTooltip =
+                "Only show notifications while in a duty (dungeons, trials, raids, solo duties, and field operations).\n" +
+                "Hides the bar during overworld combat and on training dummies.";
+
             // --- Reset ---
             internal const string Reset = "Reset";
             internal const string ResetTooltip =

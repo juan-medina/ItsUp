@@ -7,6 +7,7 @@ using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using Lumina.Excel.Sheets;
 
 namespace ItsUp.Windows
 {
@@ -93,6 +94,7 @@ namespace ItsUp.Windows
         private bool _sizeDirty;
 
         private DrawMode _drawMode;
+        private bool _isFieldOperationOrSoloDuty;
 
         public CooldownWindow(CooldownTracker cooldowns, Configuration config)
             : base("It's Up##itsup")
@@ -103,11 +105,21 @@ namespace ItsUp.Windows
             _cooldowns.Down += OnDown;
             _cooldowns.Reset += OnReset;
 
+            Services.ClientState.TerritoryChanged += OnTerritoryChanged;
+            OnTerritoryChanged(Services.ClientState.TerritoryType);
+
             _config = config;
             _lastAnchor = config.Anchor;
             Flags = LockedFlags;
             IsOpen = true;
             RespectCloseHotkey = false;
+        }
+
+        private void OnTerritoryChanged(uint territoryId)
+        {
+            var territory = Services.DataManager.GetExcelSheet<TerritoryType>()?.GetRow(territoryId);
+            var intendedUse = territory?.TerritoryIntendedUse.RowId ?? 0;
+            _isFieldOperationOrSoloDuty = intendedUse is 26 or 29 or 15 or 9;
         }
 
         private void OnCloseToUp(TrackedSkill skill, float secondsLeft)
@@ -176,6 +188,7 @@ namespace ItsUp.Windows
 
         public void Dispose()
         {
+            Services.ClientState.TerritoryChanged -= OnTerritoryChanged;
             _cooldowns.CloseToUp -= OnCloseToUp;
             _cooldowns.Up -= OnUp;
             _cooldowns.Down -= OnDown;
@@ -217,9 +230,12 @@ namespace ItsUp.Windows
         public override void PreDraw()
         {
             var inCombat = Services.Condition[ConditionFlag.InCombat] || _cooldowns.IsPreview;
+            var inDuty = Services.Condition.Any(ConditionFlag.BoundByDuty, ConditionFlag.BoundByDuty56, ConditionFlag.BoundByDuty95)
+                     || _isFieldOperationOrSoloDuty;
+            var allowedToDrawIcons = !_config.OnlyInDuties || inDuty || _cooldowns.IsPreview;
 
-            _drawMode = (!inCombat && _unlocked) ? DrawMode.Anchor
-                      : (inCombat && !_unlocked)  ? DrawMode.Icons
+            _drawMode = (!inCombat && _unlocked)                     ? DrawMode.Anchor
+                      : (inCombat && allowedToDrawIcons && !_unlocked) ? DrawMode.Icons
                       : DrawMode.Nothing;
             var needUnlock = _unlocked && inCombat;
 
