@@ -147,9 +147,9 @@ namespace ItsUp.Windows
             Tooltip(Strings.Config.PreviewTooltip);
 
             ImGui.SameLine();
-            if (ImGui.Button(Strings.Config.ResetPosition))
+            if (ImGui.Button(Strings.Config.Reset))
                 _panel.ResetPanel();
-            Tooltip(Strings.Config.ResetPositionTooltip);
+            Tooltip(Strings.Config.ResetTooltip);
         }
 
         private static string Describe(int warnMs, int lingerMs, bool lingerForever)

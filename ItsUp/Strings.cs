@@ -29,9 +29,9 @@ namespace ItsUp
                 "Runs a simulated combat loop so you can see the bar in action. /itsup preview";
 
             // --- Reset ---
-            internal const string ResetPosition = "Reset position";
-            internal const string ResetPositionTooltip =
-                "Resets icon size and position to defaults. /itsup reset";
+            internal const string Reset = "Reset";
+            internal const string ResetTooltip =
+                "Reset the display location and icon size. /itsup reset";
         }
 
         internal static class Describe
