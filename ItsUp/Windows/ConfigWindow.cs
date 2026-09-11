@@ -103,6 +103,18 @@ namespace ItsUp.Windows
             Tooltip(Strings.Config.GrowthDirectionTooltip);
 
             ImGui.SameLine();
+            ImGui.TextUnformatted(Strings.Config.IconSizeLabel);
+            ImGui.SameLine();
+
+            var iconSize = (int)MathF.Round(_config.IconSize);
+            ImGui.SetNextItemWidth(100 * ImGuiHelpers.GlobalScale);
+            if (ImGui.SliderInt("##iconsize", ref iconSize, (int)Configuration.MinIconSize, (int)Configuration.MaxIconSize, Strings.Config.IconSizeFormat))
+            {
+                _config.IconSize = iconSize;
+            }
+            if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
+            Tooltip(Strings.Config.IconSizeTooltip);
+
             var unlocked = _panel.Unlocked;
             if (ImGui.Checkbox(Strings.Config.Unlock, ref unlocked))
             {

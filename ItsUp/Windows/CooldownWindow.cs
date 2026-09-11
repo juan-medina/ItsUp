@@ -12,8 +12,8 @@ namespace ItsUp.Windows
 {
     public class CooldownWindow : Window, IDisposable
     {
-        private const float MinIconSize = 24f;
-        private const float MaxIconSize = 128f;
+        private const float MinIconSize = Configuration.MinIconSize;
+        private const float MaxIconSize = Configuration.MaxIconSize;
         private const float ResizeHandleSize = 12f;
 
         private const uint ColourReady = 0xFF00D7FF;
@@ -402,6 +402,7 @@ namespace ItsUp.Windows
             _resizing = false;
 
             if (!_sizeDirty) return;
+            _config.IconSize = MathF.Round(_config.IconSize);
             _config.Save();
             _sizeDirty = false;
         }

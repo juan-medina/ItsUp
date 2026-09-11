@@ -36,6 +36,8 @@ namespace ItsUp
         // Retained for migration from Version 1 configs
         public Dictionary<uint, AbilitySettings>? Tracked { get; set; }
 
+        public const float MinIconSize = 24f;
+        public const float MaxIconSize = 128f;
         public const float DefaultIconSize = 48f;
 
         public BarAnchor Anchor { get; set; } = BarAnchor.Centre;

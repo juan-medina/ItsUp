@@ -15,6 +15,11 @@ namespace ItsUp
                 "Which direction the bar grows as abilities come back.\n" +
                 "Right = grows rightward, Left = grows leftward, Both = grows in both directions.";
 
+            // --- Icon size ---
+            internal const string IconSizeLabel = "Icon size";
+            internal const string IconSizeFormat = "%d px";
+            internal const string IconSizeTooltip = "The size of each notification icon in pixels (24 to 128).";
+
             // --- Toggles ---
             internal const string Unlock = "Unlock";
             internal const string UnlockTooltip = "Drag to reposition, corner grip to resize. /itsup move";
