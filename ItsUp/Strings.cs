@@ -1,9 +1,45 @@
+using System.Reflection;
+
 namespace ItsUp
 {
     internal static class Strings
     {
         internal static class Config
         {
+            // --- Tabs ---
+            internal const string TabWelcome = "Welcome";
+            internal const string TabJobActions = "Job Actions";
+            internal const string TabSettings = "Settings";
+
+            // --- Welcome tab ---
+            internal static string WelcomeTitle =>
+                Services.PluginInterface?.Manifest.Name ?? "It's Up";
+
+            internal static string WelcomeTagline =>
+                Services.PluginInterface?.Manifest.Punchline ?? "Yes. Still up. Press it.";
+
+            internal static string WelcomeDescription =>
+                Services.PluginInterface?.Manifest.Description?.Trim()
+                ?? typeof(Plugin).Assembly.GetCustomAttribute<AssemblyDescriptionAttribute>()?.Description?.Trim()
+                ?? string.Empty;
+
+            internal const string WelcomeConfigureButton = "Configure Actions \u2192";
+            internal const string WelcomePreviewButton = "Try Preview Mode";
+            internal const string WelcomeUnlockButton = "Unlock Bar";
+
+            // --- Section headers in Settings tab ---
+            internal const string SectionBar = "Notification Bar";
+            internal const string SectionDisplay = "Display Options";
+            internal const string SectionDefaults = "Default Timings";
+            internal const string DefaultsHint =
+                "Default timings are automatically applied when tracking new abilities under Job Actions.";
+
+            // --- Job Actions header ---
+            internal const string TrackedCountSingle = "1 ability tracked";
+            internal const string TrackedCountMultiple = "{0} abilities tracked";
+            internal const string TrackedCountNone = "No abilities tracked";
+            internal const string SidebarHeader = "Jobs";
+
             // --- Default timings sentence (flows into inline controls) ---
             internal const string DefaultsPrefix = "Abilities show";
             internal const string DefaultsMiddle = "before ready, visible";

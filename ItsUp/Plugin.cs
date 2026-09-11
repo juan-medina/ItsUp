@@ -11,7 +11,7 @@ namespace ItsUp
 {
     public sealed class Plugin : IDalamudPlugin
     {
-        public static string Name => "It's Up";
+        public static string Name => Services.PluginInterface?.Manifest.Name ?? "It's Up";
 
         private const string CommandName = "/itsup";
         private const float BakedFontSize = 92.0f;

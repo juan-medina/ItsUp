@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using Lumina.Excel.Sheets;
@@ -19,6 +20,7 @@ namespace ItsUp
         private const int IsleSprintActionId = 29581;
 
         public IReadOnlyList<ClassJob> Jobs { get; }
+        public FrozenDictionary<uint, string> JobNames { get; }
         public FrozenDictionary<uint, string> JobAbbreviations { get; }
         public FrozenDictionary<uint, List<ActionItem>> JobActions { get; }
         public FrozenDictionary<uint, (string Name, uint Icon)> ActionInfo { get; }
@@ -33,7 +35,9 @@ namespace ItsUp
                 action => action.RowId,
                 action => (action.Name.ToString(), (uint)action.Icon));
 
+            var textInfo = CultureInfo.InvariantCulture.TextInfo;
             Jobs = LoadPlayableCombatJobs();
+            JobNames = Jobs.ToFrozenDictionary(job => job.RowId, job => textInfo.ToTitleCase(job.Name.ToString()));
             JobAbbreviations = Jobs.ToFrozenDictionary(job => job.RowId, job => job.Abbreviation.ToString());
 
             _eligibleJobsByCategory = BuildJobEligibilityByCategory(Jobs);
@@ -176,5 +180,15 @@ namespace ItsUp
 
         public string NameOf(uint actionId) =>
             ActionInfo.TryGetValue(actionId, out var info) && info.Name.Length > 0 ? info.Name : $"#{actionId}";
+
+        public string GetJobDisplayName(uint jobId)
+        {
+            if (JobNames.TryGetValue(jobId, out var name))
+            {
+                var abbrev = JobAbbreviations.TryGetValue(jobId, out var ab) ? ab : string.Empty;
+                return abbrev.Length > 0 ? $"{name} ({abbrev})" : name;
+            }
+            return $"Job #{jobId}";
+        }
     }
 }

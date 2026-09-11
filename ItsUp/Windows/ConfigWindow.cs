@@ -17,6 +17,7 @@ namespace ItsUp.Windows
         private readonly HotbarKeybindResolver _keybindResolver;
 
         private uint _selectedJobId;
+        private ConfigTab? _requestedTab;
 
         public ConfigWindow(Configuration config, CooldownTracker tracker, CooldownWindow panel, JobActionRegistry registry, HotbarKeybindResolver keybindResolver)
             : base("It's Up — Settings##its#up#config", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
@@ -27,7 +28,7 @@ namespace ItsUp.Windows
             _registry = registry;
             _keybindResolver = keybindResolver;
 
-            Size = new Vector2(620, 460);
+            Size = new Vector2(640, 480);
             SizeCondition = ImGuiCond.FirstUseEver;
             SizeConstraints = new WindowSizeConstraints
             {
@@ -45,7 +46,11 @@ namespace ItsUp.Windows
             _selectedJobId = jobId;
         }
 
-        public override void OnOpen() => SelectCurrentJob();
+        public override void OnOpen()
+        {
+            SelectCurrentJob();
+            _requestedTab = _config.LastOpenTab;
+        }
 
         public override void OnClose()
         {
@@ -55,10 +60,97 @@ namespace ItsUp.Windows
 
         public override void Draw()
         {
-            DrawDefaults();
-            ImGui.Separator();
+            using var tabBar = ImRaii.TabBar("ConfigTabBar");
+            if (!tabBar) return;
 
-            using (ImRaii.Child("sidebar", new Vector2(ImGui.GetContentRegionAvail().X * 0.22f, 0), true))
+            DrawTabItem(ConfigTab.Welcome, Strings.Config.TabWelcome, DrawWelcomeTab);
+            DrawTabItem(ConfigTab.JobActions, Strings.Config.TabJobActions, DrawJobActionsTab);
+            DrawTabItem(ConfigTab.Settings, Strings.Config.TabSettings, DrawSettingsTab);
+        }
+
+        private void DrawTabItem(ConfigTab tab, string label, Action drawContent)
+        {
+            var flags = ImGuiTabItemFlags.None;
+            if (_requestedTab == tab)
+            {
+                flags |= ImGuiTabItemFlags.SetSelected;
+                _requestedTab = null;
+            }
+
+            using var tabItem = ImRaii.TabItem(label, flags);
+            if (!tabItem) return;
+
+            if (_config.LastOpenTab != tab)
+            {
+                _config.LastOpenTab = tab;
+                _config.Save();
+            }
+
+            drawContent();
+        }
+
+        private void DrawWelcomeTab()
+        {
+            using var child = ImRaii.Child("welcome_scroll", new Vector2(0, 0), false);
+            if (!child) return;
+
+            ImGui.Spacing();
+
+            ImGui.TextUnformatted(Strings.Config.WelcomeTitle);
+            ImGui.SameLine();
+            TextMuted($"— {Strings.Config.WelcomeTagline}");
+
+            ImGui.Spacing();
+
+            var buttonSize = new Vector2(180 * ImGuiHelpers.GlobalScale, 28 * ImGuiHelpers.GlobalScale);
+            if (ImGui.Button(Strings.Config.WelcomeConfigureButton, buttonSize))
+            {
+                _requestedTab = ConfigTab.JobActions;
+            }
+
+            ImGui.SameLine();
+            var preview = _tracker.IsPreview;
+            if (ImGui.Checkbox(Strings.Config.Preview, ref preview))
+            {
+                if (preview)
+                {
+                    _panel.SetLock(false);
+                    _tracker.TogglePreview();
+                }
+                else
+                {
+                    _tracker.StopPreview();
+                }
+            }
+            Tooltip(Strings.Config.PreviewTooltip);
+
+            ImGui.SameLine();
+            var unlocked = _panel.Unlocked;
+            if (ImGui.Checkbox(Strings.Config.Unlock, ref unlocked))
+            {
+                if (unlocked)
+                {
+                    _tracker.StopPreview();
+                    _panel.SetLock(true);
+                }
+                else
+                {
+                    _panel.SetLock(false);
+                }
+            }
+            Tooltip(Strings.Config.UnlockTooltip);
+
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.Spacing();
+
+            ImGui.TextWrapped(Strings.Config.WelcomeDescription);
+        }
+
+        private void DrawJobActionsTab()
+        {
+            var sidebarWidth = 170 * ImGuiHelpers.GlobalScale;
+            using (ImRaii.Child("sidebar", new Vector2(sidebarWidth, 0), true))
                 DrawSidebar();
 
             ImGui.SameLine();
@@ -67,36 +159,21 @@ namespace ItsUp.Windows
                 DrawAbilities();
         }
 
-        private void DrawDefaults()
+        private void DrawSettingsTab()
         {
-            ImGui.AlignTextToFramePadding();
-            ImGui.TextUnformatted(Strings.Config.DefaultsPrefix);
-            ImGui.SameLine();
+            using var child = ImRaii.Child("settings_scroll", new Vector2(0, 0), false);
+            if (!child) return;
 
-            var warn = _config.DefaultWarnMs;
-            if (DrawSecondsInput("##default#warn", ref warn)) _config.DefaultWarnMs = warn;
-            if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
-
-            ImGui.SameLine();
-            ImGui.TextUnformatted(Strings.Config.DefaultsMiddle);
-            ImGui.SameLine();
-            var linger = _config.DefaultLingerMs;
-            var lingerForever = _config.DefaultLingerForever;
-            if (DrawLingerInput("default#linger", ref linger, ref lingerForever, _config.DefaultLingerMs, out var commitLinger))
-            {
-                _config.DefaultLingerMs = linger;
-                _config.DefaultLingerForever = lingerForever;
-            }
-            if (commitLinger) _config.Save();
-
-            TextMuted(Describe(_config.DefaultWarnMs, _config.DefaultLingerMs, _config.DefaultLingerForever));
+            ImGui.Spacing();
+            ImGui.TextUnformatted(Strings.Config.SectionBar);
+            ImGui.Spacing();
 
             ImGui.AlignTextToFramePadding();
             ImGui.TextUnformatted(Strings.Config.GrowthDirectionLabel);
             ImGui.SameLine();
 
             var anchor = (int)_config.Anchor;
-            ImGui.SetNextItemWidth(110 * ImGuiHelpers.GlobalScale);
+            ImGui.SetNextItemWidth(120 * ImGuiHelpers.GlobalScale);
             if (ImGui.Combo("##anchor", ref anchor, Strings.Config.GrowthDirectionItems))
             {
                 _config.Anchor = (BarAnchor)anchor;
@@ -105,17 +182,21 @@ namespace ItsUp.Windows
             Tooltip(Strings.Config.GrowthDirectionTooltip);
 
             ImGui.SameLine();
+            ImGui.Spacing();
+            ImGui.SameLine();
             ImGui.TextUnformatted(Strings.Config.IconSizeLabel);
             ImGui.SameLine();
 
             var iconSize = (int)MathF.Round(_config.IconSize);
-            ImGui.SetNextItemWidth(100 * ImGuiHelpers.GlobalScale);
-            if (ImGui.SliderInt("##iconsize", ref iconSize, (int)Configuration.MinIconSize, (int)Configuration.MaxIconSize, Strings.Config.IconSizeFormat))
+            ImGui.SetNextItemWidth(110 * ImGuiHelpers.GlobalScale);
+            if (ImGui.SliderInt("##icon#size", ref iconSize, (int)Configuration.MinIconSize, (int)Configuration.MaxIconSize, Strings.Config.IconSizeFormat))
             {
                 _config.IconSize = iconSize;
             }
             if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
             Tooltip(Strings.Config.IconSizeTooltip);
+
+            ImGui.Spacing();
 
             var unlocked = _panel.Unlocked;
             if (ImGui.Checkbox(Strings.Config.Unlock, ref unlocked))
@@ -149,6 +230,17 @@ namespace ItsUp.Windows
             Tooltip(Strings.Config.PreviewTooltip);
 
             ImGui.SameLine();
+            if (ImGui.Button(Strings.Config.Reset))
+                _panel.ResetPanel();
+            Tooltip(Strings.Config.ResetTooltip);
+
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.Spacing();
+
+            ImGui.TextUnformatted(Strings.Config.SectionDisplay);
+            ImGui.Spacing();
+
             var showAnts = _config.ShowAnts;
             if (ImGui.Checkbox(Strings.Config.ShowAnts, ref showAnts))
             {
@@ -157,7 +249,6 @@ namespace ItsUp.Windows
             }
             Tooltip(Strings.Config.ShowAntsTooltip);
 
-            ImGui.SameLine();
             var onlyInDuties = _config.OnlyInDuties;
             if (ImGui.Checkbox(Strings.Config.OnlyInDuties, ref onlyInDuties))
             {
@@ -174,16 +265,48 @@ namespace ItsUp.Windows
             }
             Tooltip(Strings.Config.ShowKeybindsTooltip);
 
+            if (_config.ShowKeybinds)
+            {
+                ImGui.SameLine();
+                if (ImGui.Button(Strings.Config.RefreshKeybinds))
+                    _keybindResolver.Refresh();
+                Tooltip(Strings.Config.RefreshKeybindsTooltip);
+            }
+
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.Spacing();
+
+            ImGui.TextUnformatted(Strings.Config.SectionDefaults);
+            ImGui.Spacing();
+
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(Strings.Config.DefaultsPrefix);
             ImGui.SameLine();
-            if (ImGui.Button(Strings.Config.RefreshKeybinds))
-                _keybindResolver.Refresh();
-            Tooltip(Strings.Config.RefreshKeybindsTooltip);
+
+            var warn = _config.DefaultWarnMs;
+            if (DrawSecondsInput("##default#warn", ref warn)) _config.DefaultWarnMs = warn;
+            if (ImGui.IsItemDeactivatedAfterEdit()) _config.Save();
 
             ImGui.SameLine();
-            if (ImGui.Button(Strings.Config.Reset))
-                _panel.ResetPanel();
-            Tooltip(Strings.Config.ResetTooltip);
+            ImGui.TextUnformatted(Strings.Config.DefaultsMiddle);
+            ImGui.SameLine();
+            var linger = _config.DefaultLingerMs;
+            var lingerForever = _config.DefaultLingerForever;
+            if (DrawLingerInput("default#linger", ref linger, ref lingerForever, _config.DefaultLingerMs, out var commitLinger))
+            {
+                _config.DefaultLingerMs = linger;
+                _config.DefaultLingerForever = lingerForever;
+            }
+            if (commitLinger) _config.Save();
+
+            ImGui.Spacing();
+            TextMuted(Describe(_config.DefaultWarnMs, _config.DefaultLingerMs, _config.DefaultLingerForever));
+            ImGui.Spacing();
+            TextMuted(Strings.Config.DefaultsHint);
         }
+
+
 
         private static string Describe(int warnMs, int lingerMs, bool lingerForever)
         {
@@ -238,9 +361,14 @@ namespace ItsUp.Windows
 
         private void DrawSidebar()
         {
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(Strings.Config.SidebarHeader);
+            ImGui.Separator();
+
             foreach (var job in _registry.Jobs)
             {
-                var label = SidebarLabel(_registry.JobAbbreviations[job.RowId], job.RowId);
+                var name = _registry.JobNames.TryGetValue(job.RowId, out var n) ? n : job.Name.ToString();
+                var label = SidebarLabel(name, job.RowId);
                 if (ImGui.Selectable(label, _selectedJobId == job.RowId))
                 {
                     _selectedJobId = job.RowId;
@@ -256,8 +384,29 @@ namespace ItsUp.Windows
 
         private void DrawAbilities()
         {
-            if (_selectedJobId != 0 && _registry.JobActions.TryGetValue(_selectedJobId, out var actions))
-                DrawAbilityTable(actions);
+            if (_selectedJobId == 0 || !_registry.JobActions.TryGetValue(_selectedJobId, out var actions))
+                return;
+
+            DrawJobHeader(_selectedJobId);
+            ImGui.Separator();
+            DrawAbilityTable(actions);
+        }
+
+        private void DrawJobHeader(uint jobId)
+        {
+            var jobName = _registry.GetJobDisplayName(jobId);
+            var trackedCount = _config.TrackedByJob.TryGetValue(jobId, out var dict) ? dict.Count : 0;
+            var countText = trackedCount switch
+            {
+                0 => Strings.Config.TrackedCountNone,
+                1 => Strings.Config.TrackedCountSingle,
+                _ => string.Format(Strings.Config.TrackedCountMultiple, trackedCount)
+            };
+
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(jobName);
+            ImGui.SameLine();
+            TextMuted($"({countText})");
         }
 
         private void DrawAbilityTable(List<ActionItem> actions)

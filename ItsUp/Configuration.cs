@@ -13,6 +13,13 @@ namespace ItsUp
         Right,
     }
 
+    public enum ConfigTab
+    {
+        Welcome = 0,
+        JobActions = 1,
+        Settings = 2,
+    }
+
     [Serializable]
     public class AbilitySettings
     {
@@ -47,6 +54,7 @@ namespace ItsUp
         public bool ShowAnts { get; set; } = true;
         public bool OnlyInDuties { get; set; } = false;
         public bool ShowKeybinds { get; set; } = true;
+        public ConfigTab LastOpenTab { get; set; } = ConfigTab.Welcome;
 
         [NonSerialized] private IDalamudPluginInterface _pluginInterface = null!;
         public void Initialize(IDalamudPluginInterface pluginInterface) => _pluginInterface = pluginInterface;
