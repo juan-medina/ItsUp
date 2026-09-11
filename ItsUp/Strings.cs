@@ -37,6 +37,14 @@ namespace ItsUp
                 "Only show notifications while in a duty (dungeons, trials, raids, solo duties, and field operations).\n" +
                 "Hides the bar during overworld combat and on training dummies.";
 
+            internal const string ShowKeybinds = "Keybind hints";
+            internal const string ShowKeybindsTooltip =
+                "Show hotbar keybind shortcuts on ability icons.";
+
+            internal const string RefreshKeybinds = "Refresh Hotkeys";
+            internal const string RefreshKeybindsTooltip =
+                "Re-scan Hotbars for keybind shortcuts.";
+
             // --- Reset ---
             internal const string Reset = "Reset";
             internal const string ResetTooltip =

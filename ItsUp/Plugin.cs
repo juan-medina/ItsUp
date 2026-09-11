@@ -15,9 +15,11 @@ namespace ItsUp
 
         private const string CommandName = "/itsup";
         private const float BakedFontSize = 92.0f;
+        private const float KeybindBakedFontSize = 24.0f;
         private const int HorizontalOversample = 2;
         private const int VerticalOversample = 2;
         private const string FontFile = "BebasNeue-Regular.ttf";
+        private const string KeybindFontFile = "Inter-Bold.ttf";
         private static readonly SafeFontConfig _fontConfig = new()
         {
             SizePx = BakedFontSize,
@@ -25,16 +27,26 @@ namespace ItsUp
             OversampleV = VerticalOversample,
             GlyphRanges = [0x0030, 0x0039, 0] // Just 0 to 9 digits
         };
+        private static readonly SafeFontConfig _keybindFontConfig = new()
+        {
+            SizePx = KeybindBakedFontSize,
+            OversampleH = HorizontalOversample,
+            OversampleV = VerticalOversample,
+            GlyphRanges = [0x0020, 0x007E, 0] // Standard ASCII 0x0020 to 0x007E
+        };
 
         private readonly IDalamudPluginInterface _pluginInterface;
         private readonly WindowSystem _windowSystem = new("ItsUp");
         private readonly Configuration _config;
         private readonly CooldownTracker _tracker;
+        private readonly HotbarKeybindResolver _keybindResolver;
         private readonly CooldownWindow _window;
         private readonly ConfigWindow _configWindow;
         private readonly string _numberFontPath;
+        private readonly string _keybindFontPath;
 
         public static IFontHandle? NumberFont { get; private set; }
+        public static IFontHandle? KeybindFont { get; private set; }
 
         public Plugin(IDalamudPluginInterface pluginInterface)
         {
@@ -51,8 +63,10 @@ namespace ItsUp
             _tracker = new CooldownTracker(_config, registry);
             _tracker.Sync();
 
-            _window = new CooldownWindow(_tracker, _config);
-            _configWindow = new ConfigWindow(_config, _tracker, _window, registry);
+            _keybindResolver = new HotbarKeybindResolver();
+
+            _window = new CooldownWindow(_tracker, _config, _keybindResolver);
+            _configWindow = new ConfigWindow(_config, _tracker, _window, registry, _keybindResolver);
             _windowSystem.AddWindow(_window);
             _windowSystem.AddWindow(_configWindow);
 
@@ -68,6 +82,9 @@ namespace ItsUp
 
             _numberFontPath = Path.Combine(_pluginInterface.AssemblyLocation.DirectoryName!, "Assets", FontFile);
             NumberFont = _pluginInterface.UiBuilder.FontAtlas.NewDelegateFontHandle(e => e.OnPreBuild(BuildNumberFont));
+
+            _keybindFontPath = Path.Combine(_pluginInterface.AssemblyLocation.DirectoryName!, "Assets", KeybindFontFile);
+            KeybindFont = _pluginInterface.UiBuilder.FontAtlas.NewDelegateFontHandle(e => e.OnPreBuild(BuildKeybindFont));
         }
 
         private void BuildNumberFont(IFontAtlasBuildToolkitPreBuild tk)
@@ -75,6 +92,14 @@ namespace ItsUp
             if (File.Exists(_numberFontPath))
             {
                 tk.AddFontFromFile(_numberFontPath, _fontConfig);
+            }
+        }
+
+        private void BuildKeybindFont(IFontAtlasBuildToolkitPreBuild tk)
+        {
+            if (File.Exists(_keybindFontPath))
+            {
+                tk.AddFontFromFile(_keybindFontPath, _keybindFontConfig);
             }
         }
 
@@ -107,6 +132,7 @@ namespace ItsUp
 
         public void Dispose()
         {
+            _keybindResolver.Dispose();
             _window.Dispose();
             Services.Framework.Update -= OnUpdate;
             _pluginInterface.UiBuilder.OpenMainUi -= OpenConfig;

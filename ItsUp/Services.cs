@@ -14,6 +14,7 @@ namespace ItsUp
         [PluginService] public static IFramework Framework { get; private set; } = null!;
         [PluginService] public static IObjectTable ObjectTable { get; private set; } = null!;
         [PluginService] public static IPluginLog Logger { get; private set; } = null!;
+        [PluginService] public static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
 
         public static void Initialize(IDalamudPluginInterface pi)
         {

@@ -82,6 +82,7 @@ namespace ItsUp.Windows
 
         private readonly CooldownTracker _cooldowns;
         private readonly Configuration _config;
+        private readonly HotbarKeybindResolver _keybindResolver;
         private readonly List<DisplayEntry> _displayList = [];
         private bool _unlocked;
 
@@ -96,10 +97,11 @@ namespace ItsUp.Windows
         private DrawMode _drawMode;
         private bool _isFieldOperationOrSoloDuty;
 
-        public CooldownWindow(CooldownTracker cooldowns, Configuration config)
+        public CooldownWindow(CooldownTracker cooldowns, Configuration config, HotbarKeybindResolver keybindResolver)
             : base("It's Up##itsup")
         {
             _cooldowns = cooldowns;
+            _keybindResolver = keybindResolver;
             _cooldowns.CloseToUp += OnCloseToUp;
             _cooldowns.Up += OnUp;
             _cooldowns.Down += OnDown;
@@ -347,7 +349,7 @@ namespace ItsUp.Windows
                     if (drawn) ImGui.SameLine(0, IconGap);
                     drawn = true;
 
-                    DrawEntry(drawList, entry, IconSize, _config.ShowAnts);
+                    DrawEntry(drawList, entry, IconSize, _config.ShowAnts, _config.ShowKeybinds, _keybindResolver);
                 }
             }
         }
@@ -461,7 +463,8 @@ namespace ItsUp.Windows
             };
         }
 
-        private static void DrawEntry(ImDrawListPtr drawList, DisplayEntry entry, float iconSize, bool showAnts)
+        private static void DrawEntry(
+            ImDrawListPtr drawList, DisplayEntry entry, float iconSize, bool showAnts, bool showKeybinds, HotbarKeybindResolver keybindResolver)
         {
             var pos = ImGui.GetCursorScreenPos();
             var size = new Vector2(iconSize, iconSize);
@@ -473,12 +476,16 @@ namespace ItsUp.Windows
 
             ImGui.Dummy(size);
 
+            var keybind = showKeybinds ? keybindResolver.GetKeybind(entry.Skill.ActionId, entry.Skill.ParentActionId) : null;
+
             if (entry.State == DisplayState.Ready)
             {
                 var popScale = PopScaleFor(entry.StateEnteredAt);
                 DrawScaledIcon(drawList, wrap, pos, size, popScale, 1f);
                 if (showAnts)
                     DrawReadyBorder(drawList, pos, size, scale, popScale);
+                if (keybind != null)
+                    DrawKeybindHint(drawList, keybind, pos, size, scale, popScale);
                 return;
             }
 
@@ -496,19 +503,56 @@ namespace ItsUp.Windows
                 var textPos = pos + (size - textSize) / 2f;
 
                 var outlineSize = OutlineThickness * scale;
-                drawList.AddText(font, fontSize, textPos + new Vector2(-outlineSize, 0), OutlineColour, label);
-                drawList.AddText(font, fontSize, textPos + new Vector2(outlineSize, 0), OutlineColour, label);
-                drawList.AddText(font, fontSize, textPos + new Vector2(0, -outlineSize), OutlineColour, label);
-                drawList.AddText(font, fontSize, textPos + new Vector2(0, outlineSize), OutlineColour, label);
-
-                drawList.AddText(font, fontSize, textPos, ColourText, label);
+                DrawOutlinedText(drawList, font, fontSize, textPos, label, outlineSize);
 
                 if (useFont) Plugin.NumberFont!.Pop();
+
+                if (keybind != null)
+                    DrawKeybindHint(drawList, keybind, pos, size, scale, 1f);
                 return;
             }
 
             if (entry.State is DisplayState.PressedFading or DisplayState.LingerFading)
                 DrawPressed(drawList, wrap, pos, size, entry.State, entry.StateEnteredAt);
+        }
+
+        private static void DrawKeybindHint(
+            ImDrawListPtr drawList, string hint, Vector2 pos, Vector2 size, float scale, float popScale)
+        {
+            var useFont = Plugin.KeybindFont?.Available == true;
+            if (useFont) Plugin.KeybindFont!.Push();
+
+            var font = ImGui.GetFont();
+            var fontSize = Math.Max(9f, 14f * scale * popScale);
+
+            var padding = new Vector2(3f * scale * popScale, 2f * scale * popScale);
+            var center = pos + size / 2f;
+            var unscaledPos = pos + padding;
+            var textPos = popScale != 1f
+                ? center + (unscaledPos - center) * popScale
+                : unscaledPos;
+
+            var outlineSize = Math.Max(1f, OutlineThickness * scale * popScale * 0.75f);
+            DrawOutlinedText(drawList, font, fontSize, textPos, hint, outlineSize);
+
+            if (useFont) Plugin.KeybindFont!.Pop();
+        }
+
+        private static void DrawOutlinedText(
+            ImDrawListPtr drawList,
+            ImFontPtr font,
+            float fontSize,
+            Vector2 pos,
+            string text,
+            float outlineSize,
+            uint textColour = ColourText,
+            uint outlineColour = OutlineColour)
+        {
+            drawList.AddText(font, fontSize, pos + new Vector2(-outlineSize, 0), outlineColour, text);
+            drawList.AddText(font, fontSize, pos + new Vector2(outlineSize, 0), outlineColour, text);
+            drawList.AddText(font, fontSize, pos + new Vector2(0, -outlineSize), outlineColour, text);
+            drawList.AddText(font, fontSize, pos + new Vector2(0, outlineSize), outlineColour, text);
+            drawList.AddText(font, fontSize, pos, textColour, text);
         }
 
         private static uint WithAlpha(uint colour, float alpha01) =>

@@ -46,6 +46,7 @@ namespace ItsUp
         public float IconSize { get; set; } = DefaultIconSize;
         public bool ShowAnts { get; set; } = true;
         public bool OnlyInDuties { get; set; } = false;
+        public bool ShowKeybinds { get; set; } = true;
 
         [NonSerialized] private IDalamudPluginInterface _pluginInterface = null!;
         public void Initialize(IDalamudPluginInterface pluginInterface) => _pluginInterface = pluginInterface;

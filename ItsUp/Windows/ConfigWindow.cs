@@ -14,16 +14,18 @@ namespace ItsUp.Windows
         private readonly CooldownTracker _tracker;
         private readonly CooldownWindow _panel;
         private readonly JobActionRegistry _registry;
+        private readonly HotbarKeybindResolver _keybindResolver;
 
         private uint _selectedJobId;
 
-        public ConfigWindow(Configuration config, CooldownTracker tracker, CooldownWindow panel, JobActionRegistry registry)
+        public ConfigWindow(Configuration config, CooldownTracker tracker, CooldownWindow panel, JobActionRegistry registry, HotbarKeybindResolver keybindResolver)
             : base("It's Up — Settings##its#up#config", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
         {
             _config = config;
             _tracker = tracker;
             _panel = panel;
             _registry = registry;
+            _keybindResolver = keybindResolver;
 
             Size = new Vector2(620, 460);
             SizeCondition = ImGuiCond.FirstUseEver;
@@ -163,6 +165,19 @@ namespace ItsUp.Windows
                 _config.Save();
             }
             Tooltip(Strings.Config.OnlyInDutiesTooltip);
+
+            var showKeybinds = _config.ShowKeybinds;
+            if (ImGui.Checkbox(Strings.Config.ShowKeybinds, ref showKeybinds))
+            {
+                _config.ShowKeybinds = showKeybinds;
+                _config.Save();
+            }
+            Tooltip(Strings.Config.ShowKeybindsTooltip);
+
+            ImGui.SameLine();
+            if (ImGui.Button(Strings.Config.RefreshKeybinds))
+                _keybindResolver.Refresh();
+            Tooltip(Strings.Config.RefreshKeybindsTooltip);
 
             ImGui.SameLine();
             if (ImGui.Button(Strings.Config.Reset))
