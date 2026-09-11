@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.Game;
-using Action = Lumina.Excel.Sheets.Action;
 
 namespace ItsUp
 {
@@ -31,7 +30,7 @@ namespace ItsUp
         public SkillStatus Status { get; set; } = SkillStatus.Down;
     }
 
-    public class CooldownTracker(Configuration config)
+    public class CooldownTracker(Configuration config, JobActionRegistry registry)
     {
         private class SimulatedSkill
         {
@@ -43,10 +42,12 @@ namespace ItsUp
         }
 
         private readonly Configuration _config = config;
+        private readonly JobActionRegistry _registry = registry;
         private readonly List<TrackedSkill> _skills = [];
         private readonly List<SimulatedSkill> _simulatedSkills = [];
         private readonly Random _random = new();
         private DateTime _lastSimTime;
+        private uint _currentJobId;
 
         public IReadOnlyList<TrackedSkill> Skills => _skills;
         public bool IsPreview { get; private set; }
@@ -77,39 +78,28 @@ namespace ItsUp
             if (IsPreview) return;
 
             var player = Services.ObjectTable.LocalPlayer;
-            var currentJobId = player?.ClassJob.RowId ?? 0;
-            var parentJobId = player?.ClassJob.Value.ClassJobParent.RowId ?? 0;
-
-            var sheet = Services.DataManager.GetExcelSheet<Action>()!;
+            var currentJobId = player?.ClassJob.RowId ?? _currentJobId;
 
             // 1. Try to find skills tracked on the current job
-            var pool = _skills.Where(s =>
-            {
-                if (!sheet.TryGetRow(s.ActionId, out var row)) return false;
-                return row.ClassJob.RowId == currentJobId ||
-                       (parentJobId > 0 && row.ClassJob.RowId == parentJobId) ||
-                       row.IsRoleAction;
-            }).ToList();
+            var pool = _skills.ToList();
 
             // 2. If none tracked for this job, pick random eligible abilities for this job
-            if (pool.Count == 0)
+            if (pool.Count == 0 && _registry.JobActions.TryGetValue(currentJobId, out var jobActions) && jobActions.Count > 0)
             {
-                var candidateActions = sheet
-                    .Where(a => !a.IsPvP
-                                && (a.ClassJob.RowId == currentJobId || (parentJobId > 0 && a.ClassJob.RowId == parentJobId) || a.IsRoleAction)
-                                && a.IsPlayerAction
-                                && (a.ActionCategory.RowId == 4 || a.Recast100ms > 100))
+                var candidateActions = jobActions
+                    .Where(a => !a.IsFollowup)
                     .OrderBy(_ => _random.Next())
                     .Take(3)
                     .ToList();
 
                 foreach (var action in candidateActions)
                 {
+                    var info = _registry.ActionInfo.GetValueOrDefault(action.ActionId);
                     pool.Add(new()
                     {
-                        ActionId = action.RowId,
-                        Name = action.Name.ToString(),
-                        IconId = action.Icon,
+                        ActionId = action.ActionId,
+                        Name = info.Name,
+                        IconId = info.Icon,
                         Settings = new AbilitySettings
                         {
                             WarnMs = _config.DefaultWarnMs,
@@ -164,24 +154,26 @@ namespace ItsUp
 
         public void Sync()
         {
-            var sheet = Services.DataManager.GetExcelSheet<Action>()!;
+            if (_currentJobId == 0) return;
 
-            // Remove skills we don't track anymore
-            _skills.RemoveAll(s => !_config.Tracked.ContainsKey(s.ActionId));
+            var currentTracked = _config.GetTrackedForJob(_currentJobId);
+
+            // Remove skills we don't track anymore on this job
+            _skills.RemoveAll(s => !currentTracked.ContainsKey(s.ActionId));
 
             // Add missing skills
-            foreach (var (actionId, settings) in _config.Tracked)
+            foreach (var (actionId, settings) in currentTracked)
             {
                 if (_skills.Exists(s => s.ActionId == actionId)) continue;
 
                 var skill = new TrackedSkill { ActionId = actionId, Settings = settings };
-                if (sheet.TryGetRow(actionId, out var row))
+                if (_registry.ActionInfo.TryGetValue(actionId, out var info))
                 {
-                    skill.Name = row.Name.ToString();
-                    skill.IconId = row.Icon;
+                    skill.Name = info.Name;
+                    skill.IconId = info.Icon;
                 }
 
-                Services.Logger.Information($"Tracking skill {actionId} = \"{skill.Name}\" (icon {skill.IconId})");
+                Services.Logger.Information($"Tracking skill {actionId} = \"{skill.Name}\" (icon {skill.IconId}) on job {_currentJobId}");
                 _skills.Add(skill);
             }
         }
@@ -191,6 +183,15 @@ namespace ItsUp
             var am = ActionManager.Instance();
             var player = Services.ObjectTable.LocalPlayer;
             if (am == null || player == null) return;
+
+            var currentJobId = player.ClassJob.RowId;
+            if (currentJobId != _currentJobId)
+            {
+                _currentJobId = currentJobId;
+                _skills.Clear();
+                Sync();
+                Reset?.Invoke();
+            }
 
             var inCombat = Services.Condition[ConditionFlag.InCombat];
             if (inCombat)

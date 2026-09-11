@@ -1,48 +1,29 @@
 using System;
-using System.Collections.Frozen;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
-using Lumina.Excel.Sheets;
-using Action = Lumina.Excel.Sheets.Action;
 
 namespace ItsUp.Windows
 {
     public class ConfigWindow : Window
     {
-        private enum View { Role, Job }
-
         private readonly Configuration _config;
         private readonly CooldownTracker _tracker;
         private readonly CooldownWindow _panel;
+        private readonly JobActionRegistry _registry;
 
-        public record ActionItem(uint ActionId, uint ParentActionId = 0)
-        {
-            public bool IsFollowup => ParentActionId != 0;
-        }
-
-        private readonly FrozenDictionary<uint, (string Name, uint Icon)> _actionInfo;
-        private readonly FrozenDictionary<uint, string> _jobAbbreviations;
-        private readonly FrozenDictionary<uint, List<ActionItem>> _jobActions;
-        private readonly List<ActionItem> _roleActions;
-        private readonly List<ClassJob> _jobs;
-
-        private const int ActionType = 4;
-        private const int IsleSprint = 29581;
-
-        private View _view = View.Role;
         private uint _selectedJobId;
 
-        public ConfigWindow(Configuration config, CooldownTracker tracker, CooldownWindow panel)
+        public ConfigWindow(Configuration config, CooldownTracker tracker, CooldownWindow panel, JobActionRegistry registry)
             : base("It's Up — Settings##its#up#config", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
         {
             _config = config;
             _tracker = tracker;
             _panel = panel;
+            _registry = registry;
 
             Size = new Vector2(620, 460);
             SizeCondition = ImGuiCond.FirstUseEver;
@@ -51,120 +32,14 @@ namespace ItsUp.Windows
                 MinimumSize = new Vector2(520, 360),
                 MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
             };
-
-            var allActions = Services.DataManager.GetExcelSheet<Action>()!.ToList();
-            _actionInfo = allActions.ToFrozenDictionary(a => a.RowId, a => (a.Name.ToString(), (uint)a.Icon));
-
-            _jobs = [.. Services.DataManager.GetExcelSheet<ClassJob>()!
-                .Where(j => j.Role > 0 && j.ItemSoulCrystal.Value.RowId > 0)
-                .OrderBy(j => j.Name.ToString(), StringComparer.Ordinal)];
-
-            _jobAbbreviations = _jobs.ToFrozenDictionary(j => j.RowId, j => j.Abbreviation.ToString());
-
-            var followupsByBase = BuildFollowupMap(out var isFollowup);
-            _jobActions = BuildJobActions(allActions, followupsByBase, isFollowup);
-            _roleActions = BuildRoleActions(allActions);
         }
-
-        private static Dictionary<uint, List<uint>> BuildFollowupMap(out HashSet<uint> isFollowup)
-        {
-            var followups = new Dictionary<uint, List<uint>>();
-            isFollowup = [];
-
-            var replaceSheet = Services.DataManager.GetSubrowExcelSheet<ReplaceAction>();
-            if (replaceSheet == null) return followups;
-
-            foreach (var subrowCollection in replaceSheet)
-            {
-                foreach (var row in subrowCollection)
-                {
-                    var baseId = row.Action.RowId;
-                    if (baseId == 0) continue;
-
-                    foreach (var targetRef in row.ReplaceActions)
-                    {
-                        var targetId = targetRef.RowId;
-                        if (targetId == 0 || targetId == baseId) continue;
-
-                        if (!followups.TryGetValue(baseId, out var list))
-                        {
-                            list = [];
-                            followups[baseId] = list;
-                        }
-
-                        if (!list.Contains(targetId))
-                        {
-                            list.Add(targetId);
-                            isFollowup.Add(targetId);
-                        }
-                    }
-                }
-            }
-
-            return followups;
-        }
-
-        private FrozenDictionary<uint, List<ActionItem>> BuildJobActions(
-            List<Action> allActions,
-            Dictionary<uint, List<uint>> followupsByBase,
-            HashSet<uint> isFollowup)
-        {
-            var byJob = new Dictionary<uint, List<ActionItem>>();
-            foreach (var job in _jobs)
-            {
-                var jobActionIds = allActions
-                    .Where(a => !a.IsPvP
-                                && (a.ClassJob.RowId == job.RowId || a.ClassJob.RowId == job.ClassJobParent.RowId)
-                                && a.IsPlayerAction
-                                && (a.ActionCategory.RowId == ActionType || a.Recast100ms > 100))
-                    .Select(a => a.RowId);
-
-                var rootIds = jobActionIds.Where(id => id != IsleSprint && !isFollowup.Contains(id)).ToList();
-                rootIds.Sort(CompareByName);
-
-                var items = new List<ActionItem>();
-                foreach (var rootId in rootIds)
-                {
-                    items.Add(new ActionItem(rootId, 0));
-                    if (followupsByBase.TryGetValue(rootId, out var children))
-                    {
-                        foreach (var childId in children)
-                        {
-                            items.Add(new ActionItem(childId, rootId));
-                            if (_config.Tracked.TryGetValue(childId, out var existing))
-                                existing.ParentActionId = rootId;
-                        }
-                    }
-                }
-
-                byJob[job.RowId] = items;
-            }
-
-            return byJob.ToFrozenDictionary();
-        }
-
-        private List<ActionItem> BuildRoleActions(List<Action> allActions)
-        {
-            var roleIds = allActions
-                .Where(a => a.IsRoleAction && a.ClassJobLevel != 0)
-                .Select(a => a.RowId)
-                .ToList();
-            roleIds.Sort(CompareByName);
-            return [.. roleIds.Select(id => new ActionItem(id, 0))];
-        }
-
-        private int CompareByName(uint lhs, uint rhs) =>
-            string.Compare(NameOf(lhs), NameOf(rhs), StringComparison.Ordinal);
-
-        private string NameOf(uint actionId) =>
-            _actionInfo.TryGetValue(actionId, out var info) && info.Name.Length > 0 ? info.Name : $"#{actionId}";
 
         private void SelectCurrentJob()
         {
             var jobId = Services.ObjectTable.LocalPlayer?.ClassJob.RowId ?? 0;
-            if (jobId == 0 || !_jobActions.ContainsKey(jobId)) return;
+            if (jobId == 0 || !_registry.JobActions.ContainsKey(jobId))
+                jobId = _registry.Jobs.Count > 0 ? _registry.Jobs[0].RowId : 0;
 
-            _view = View.Job;
             _selectedJobId = jobId;
         }
 
@@ -318,30 +193,27 @@ namespace ItsUp.Windows
 
         private void DrawSidebar()
         {
-            if (ImGui.Selectable(SidebarLabel("Role", _roleActions), _view == View.Role))
-                _view = View.Role;
-
-            foreach (var job in _jobs)
+            foreach (var job in _registry.Jobs)
             {
-                var label = SidebarLabel(_jobAbbreviations[job.RowId], _jobActions[job.RowId]);
-                if (ImGui.Selectable(label, _view == View.Job && _selectedJobId == job.RowId))
+                var label = SidebarLabel(_registry.JobAbbreviations[job.RowId], job.RowId);
+                if (ImGui.Selectable(label, _selectedJobId == job.RowId))
                 {
-                    _view = View.Job;
                     _selectedJobId = job.RowId;
                 }
             }
         }
 
-        private string SidebarLabel(string name, List<ActionItem> actions)
+        private string SidebarLabel(string name, uint jobId)
         {
-            var tracked = actions.Count(a => _config.Tracked.ContainsKey(a.ActionId));
+            var tracked = _config.TrackedByJob.TryGetValue(jobId, out var dict) ? dict.Count : 0;
             return tracked > 0 ? $"{name} ({tracked})" : name;
         }
 
-        private void DrawAbilities() =>
-            DrawAbilityTable(_view == View.Job && _jobActions.TryGetValue(_selectedJobId, out var actions)
-                ? actions
-                : _roleActions);
+        private void DrawAbilities()
+        {
+            if (_selectedJobId != 0 && _registry.JobActions.TryGetValue(_selectedJobId, out var actions))
+                DrawAbilityTable(actions);
+        }
 
         private void DrawAbilityTable(List<ActionItem> actions)
         {
@@ -380,7 +252,8 @@ namespace ItsUp.Windows
         private AbilitySettings? DrawTrackCell(uint actionId, uint parentActionId)
         {
             ImGui.TableNextColumn();
-            _config.Tracked.TryGetValue(actionId, out var settings);
+            var jobTracked = _config.GetTrackedForJob(_selectedJobId);
+            jobTracked.TryGetValue(actionId, out var settings);
             var track = settings != null;
             if (!ImGui.Checkbox("##track", ref track)) return settings;
 
@@ -394,11 +267,11 @@ namespace ItsUp.Windows
                     LingerMs = _config.DefaultLingerForever ? 0 : _config.DefaultLingerMs,
                     LingerForever = _config.DefaultLingerForever
                 };
-                _config.Tracked[actionId] = settings;
+                jobTracked[actionId] = settings;
             }
             else
             {
-                _config.Tracked.Remove(actionId);
+                jobTracked.Remove(actionId);
                 settings = null;
             }
 
@@ -420,7 +293,7 @@ namespace ItsUp.Windows
             DrawIcon(actionId);
             ImGui.SameLine();
             ImGui.AlignTextToFramePadding();
-            ImGui.TextUnformatted(NameOf(actionId));
+            ImGui.TextUnformatted(_registry.NameOf(actionId));
         }
 
         private void DrawHeadsUpCell(AbilitySettings? settings, bool isFollowup)
@@ -465,7 +338,7 @@ namespace ItsUp.Windows
         private void DrawIcon(uint actionId)
         {
             var size = new Vector2(ImGui.GetFrameHeight());
-            if (_actionInfo.TryGetValue(actionId, out var info) &&
+            if (_registry.ActionInfo.TryGetValue(actionId, out var info) &&
                 Services.TextureProvider.TryGetFromGameIcon(info.Icon, out var texture) &&
                 texture.TryGetWrap(out var wrap, out _))
                 ImGui.Image(wrap.Handle, size);

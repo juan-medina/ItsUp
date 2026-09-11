@@ -41,15 +41,18 @@ namespace ItsUp
             Services.Initialize(pluginInterface);
             _pluginInterface = pluginInterface;
 
+            var registry = new JobActionRegistry();
+
             var existing = pluginInterface.GetPluginConfig() as Configuration;
             _config = existing ?? new Configuration();
             _config.Initialize(pluginInterface);
+            _config.MigrateIfNeeded(registry.JobActions);
 
-            _tracker = new CooldownTracker(_config);
+            _tracker = new CooldownTracker(_config, registry);
             _tracker.Sync();
 
             _window = new CooldownWindow(_tracker, _config);
-            _configWindow = new ConfigWindow(_config, _tracker, _window);
+            _configWindow = new ConfigWindow(_config, _tracker, _window, registry);
             _windowSystem.AddWindow(_window);
             _windowSystem.AddWindow(_configWindow);
 
