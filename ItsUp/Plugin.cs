@@ -91,6 +91,8 @@ namespace ItsUp
                 _window.ToggleLock();
             else if (trimmed.Equals("preview", StringComparison.OrdinalIgnoreCase))
                 TogglePreview();
+            else if (trimmed.Equals("reset", StringComparison.OrdinalIgnoreCase))
+                _window.ResetPanel();
             else
                 OpenConfig();
         }

@@ -25,7 +25,8 @@ namespace ItsUp
 
             // --- Reset ---
             internal const string ResetPosition = "Reset position";
-            internal const string ResetPositionTooltip = "Resets icon size and position to defaults.";
+            internal const string ResetPositionTooltip =
+                "Resets icon size and position to defaults. /itsup reset";
         }
 
         internal static class Describe
@@ -61,7 +62,8 @@ namespace ItsUp
             internal const string HelpMessage =
                 "Open settings.\n" +
                 "/itsup move \u2192 Unlock the bar to reposition it.\n" +
-                "/itsup preview \u2192 Toggle preview mode.";
+                "/itsup preview \u2192 Toggle preview mode.\n" +
+                "/itsup reset \u2192 Reset the bar position and size.";
         }
 
         internal const string SlotPreviewLabel = "It's Up";
