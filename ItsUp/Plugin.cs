@@ -86,10 +86,21 @@ namespace ItsUp
 
         private void OnCommand(string command, string args)
         {
-            if (args.Trim().Equals("move", StringComparison.OrdinalIgnoreCase))
+            var trimmed = args.Trim();
+            if (trimmed.Equals("move", StringComparison.OrdinalIgnoreCase))
                 _window.ToggleLock();
+            else if (trimmed.Equals("preview", StringComparison.OrdinalIgnoreCase))
+                TogglePreview();
             else
                 OpenConfig();
+        }
+
+        private void TogglePreview()
+        {
+            if (_window.Unlocked)
+                _window.SetLock(false);
+
+            _tracker.TogglePreview();
         }
 
         public void Dispose()

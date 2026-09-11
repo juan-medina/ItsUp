@@ -20,7 +20,8 @@ namespace ItsUp
             internal const string UnlockTooltip = "Drag to reposition, corner grip to resize. /itsup move";
 
             internal const string Preview = "Preview";
-            internal const string PreviewTooltip = "Runs a simulated combat loop so you can see the bar in action.";
+            internal const string PreviewTooltip =
+                "Runs a simulated combat loop so you can see the bar in action. /itsup preview";
 
             // --- Reset ---
             internal const string ResetPosition = "Reset position";
@@ -58,7 +59,9 @@ namespace ItsUp
         internal static class Command
         {
             internal const string HelpMessage =
-                "Open settings.\n/itsup move \u2192 Unlock the bar to reposition it.";
+                "Open settings.\n" +
+                "/itsup move \u2192 Unlock the bar to reposition it.\n" +
+                "/itsup preview \u2192 Toggle preview mode.";
         }
 
         internal const string SlotPreviewLabel = "It's Up";

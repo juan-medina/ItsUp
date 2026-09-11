@@ -22,6 +22,7 @@ It's perfect for those key rotational abilities you really don't want to drift. 
 
 - `/itsup` — pick which abilities to track
 - `/itsup move` — unlock the panel to drag it into place
+- `/itsup preview` — toggle preview mode
 
 Everything else — filters, timing meanings, panel positioning — is explained in the settings window itself.
 
