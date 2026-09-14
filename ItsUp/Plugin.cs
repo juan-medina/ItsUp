@@ -63,7 +63,15 @@ namespace ItsUp
             _tracker = new CooldownTracker(_config, registry);
             _tracker.Sync();
 
-            _keybindResolver = new HotbarKeybindResolver();
+            try
+            {
+                _keybindResolver = new HotbarKeybindResolver();
+            }
+            catch (Exception ex)
+            {
+                Services.Logger.Error($"HotbarKeybindResolver failed to initialize: {ex}");
+                throw;
+            }
 
             _window = new CooldownWindow(_tracker, _config, _keybindResolver);
             _configWindow = new ConfigWindow(_config, _tracker, _window, registry, _keybindResolver);

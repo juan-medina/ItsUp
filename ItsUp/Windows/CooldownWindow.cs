@@ -119,6 +119,8 @@ namespace ItsUp.Windows
 
         private void OnTerritoryChanged(uint territoryId)
         {
+            if (territoryId == 0) return;
+
             var territory = Services.DataManager.GetExcelSheet<TerritoryType>()?.GetRow(territoryId);
             var intendedUse = territory?.TerritoryIntendedUse.RowId ?? 0;
             _isFieldOperationOrSoloDuty = intendedUse is 26 or 29 or 15 or 9;
