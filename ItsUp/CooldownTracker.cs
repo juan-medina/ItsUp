@@ -173,7 +173,7 @@ namespace ItsUp
                     skill.IconId = info.Icon;
                 }
 
-                Services.Logger.Information($"Tracking skill {actionId} = \"{skill.Name}\" (icon {skill.IconId}) on job {_currentJobId}");
+                Services.Logger.Debug($"Tracking skill {actionId} = \"{skill.Name}\" (icon {skill.IconId}) on job {_currentJobId}");
                 _skills.Add(skill);
             }
         }
