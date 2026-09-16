@@ -16,8 +16,17 @@ namespace ItsUp
 
     public class JobActionRegistry
     {
-        private const int ActionCategoryAbility = 4;
-        private const int IsleSprintActionId = 29581;
+        private enum ActionCategoryId : uint
+        {
+            Ability = 4,
+        }
+
+        private const uint IsleSprintActionId = 29581;
+
+        // Spells/weapon kills with cooldown > 10s (excludes standard 2.5s GCDs)
+        private const int MinLongCooldownSeconds = 10;
+        private const int TicksPerSecond100ms = 10;
+        private const int MinLongCooldownTicks = MinLongCooldownSeconds * TicksPerSecond100ms;
 
         public IReadOnlyList<ClassJob> Jobs { get; }
         public FrozenDictionary<uint, string> JobNames { get; }
@@ -117,8 +126,8 @@ namespace ItsUp
             var belongsToJobOrParentClass = action.ClassJob.RowId == job.RowId
                 || action.ClassJob.RowId == job.ClassJobParent.RowId;
 
-            var isAbilityOrLongCooldown = action.ActionCategory.RowId == ActionCategoryAbility
-                || action.Recast100ms > 100;
+            var isAbilityOrLongCooldown = action.ActionCategory.RowId == (uint)ActionCategoryId.Ability
+                || action.Recast100ms > MinLongCooldownTicks;
 
             return belongsToJobOrParentClass && isAbilityOrLongCooldown;
         }
