@@ -10,6 +10,9 @@ namespace ItsUp
 {
     public class HotbarKeybindResolver : IDisposable
     {
+        private const uint StandardHotbarCount = 10;
+        private const uint SlotsPerHotbar = 16;
+
         private static readonly string[] _actionBarNames =
         [
             "_ActionBar",
@@ -70,10 +73,9 @@ namespace ItsUp
                 var am = ActionManager.Instance();
                 var newKeybinds = new Dictionary<uint, string>();
 
-                // 10 standard hotbars (0..9) with 16 slots each (0..15)
-                for (uint bar = 0; bar < 10; bar++)
+                for (uint bar = 0; bar < StandardHotbarCount; bar++)
                 {
-                    for (uint slot = 0; slot < 16; slot++)
+                    for (uint slot = 0; slot < SlotsPerHotbar; slot++)
                     {
                         try
                         {
