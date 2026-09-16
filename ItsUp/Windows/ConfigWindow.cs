@@ -427,18 +427,19 @@ namespace ItsUp.Windows
             DrawHeader(2, Strings.Table.ColumnHeadsUp, Strings.Table.HeadsUpTooltip);
             DrawHeader(3, Strings.Table.ColumnVisible, Strings.Table.VisibleTooltip);
 
+            var jobLevel = _registry.GetPlayerJobLevel(_selectedJobId);
             foreach (var item in actions)
-                DrawAbilityRow(item.ActionId, item.ParentActionId);
+                DrawAbilityRow(item.ActionId, item.ParentActionId, jobLevel);
         }
 
-        private void DrawAbilityRow(uint actionId, uint parentActionId)
+        private void DrawAbilityRow(uint actionId, uint parentActionId, byte jobLevel)
         {
             var isFollowup = parentActionId != 0;
             using var id = ImRaii.PushId((int)actionId);
             ImGui.TableNextRow();
 
             var settings = DrawTrackCell(actionId, parentActionId);
-            DrawNameCell(actionId, isFollowup);
+            DrawNameCell(actionId, isFollowup, jobLevel);
             DrawHeadsUpCell(settings, isFollowup);
             DrawVisibleCell(settings);
         }
@@ -474,7 +475,7 @@ namespace ItsUp.Windows
             return settings;
         }
 
-        private void DrawNameCell(uint actionId, bool isFollowup)
+        private void DrawNameCell(uint actionId, bool isFollowup, byte jobLevel)
         {
             ImGui.TableNextColumn();
             if (isFollowup)
@@ -484,10 +485,11 @@ namespace ItsUp.Windows
                 ImGui.SameLine();
             }
 
-            DrawIcon(actionId);
+            var displayActionId = isFollowup ? actionId : _registry.GetTraitUpgradedActionId(actionId, jobLevel);
+            DrawIcon(displayActionId);
             ImGui.SameLine();
             ImGui.AlignTextToFramePadding();
-            ImGui.TextUnformatted(_registry.NameOf(actionId));
+            ImGui.TextUnformatted(_registry.NameOf(displayActionId));
         }
 
         private void DrawHeadsUpCell(AbilitySettings? settings, bool isFollowup)

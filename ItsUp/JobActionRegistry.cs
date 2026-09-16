@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
 using Action = Lumina.Excel.Sheets.Action;
 
@@ -47,6 +48,7 @@ namespace ItsUp
         public FrozenDictionary<uint, string> JobAbbreviations { get; }
         public FrozenDictionary<uint, List<ActionItem>> JobActions { get; }
         public FrozenDictionary<uint, (string Name, uint Icon)> ActionInfo { get; }
+        public FrozenDictionary<uint, int> JobExpIndices { get; }
 
         private readonly FrozenDictionary<uint, List<(byte Level, uint ActionId)>> _traitUpgrades;
 
@@ -61,6 +63,7 @@ namespace ItsUp
             Jobs = LoadPlayableCombatJobs();
             JobNames = Jobs.ToFrozenDictionary(job => job.RowId, job => textInfo.ToTitleCase(job.Name.ToString()));
             JobAbbreviations = Jobs.ToFrozenDictionary(job => job.RowId, job => job.Abbreviation.ToString());
+            JobExpIndices = Jobs.ToFrozenDictionary(job => job.RowId, job => (int)job.ExpArrayIndex);
 
             var replacements = LoadReplacements(allActions);
             _traitUpgrades = replacements.TraitUpgrades;
@@ -301,6 +304,26 @@ namespace ItsUp
                 return abbrev.Length > 0 ? $"{name} ({abbrev})" : name;
             }
             return $"Job #{jobId}";
+        }
+
+        public unsafe byte GetPlayerJobLevel(uint jobId)
+        {
+            var player = Services.ObjectTable.LocalPlayer;
+            if (player != null && player.ClassJob.RowId == jobId)
+                return (byte)player.Level;
+
+            var state = PlayerState.Instance();
+            if (state != null && JobExpIndices.TryGetValue(jobId, out var expIndex))
+            {
+                if (expIndex >= 0 && expIndex < state->ClassJobLevels.Length)
+                {
+                    var level = state->ClassJobLevels[expIndex];
+                    if (level > 0)
+                        return (byte)level;
+                }
+            }
+
+            return byte.MaxValue;
         }
     }
 }

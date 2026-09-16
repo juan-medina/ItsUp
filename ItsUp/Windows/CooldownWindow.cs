@@ -482,7 +482,8 @@ namespace ItsUp.Windows
 
             ImGui.Dummy(size);
 
-            var keybind = showKeybinds ? keybindResolver.GetKeybind(entry.Skill.ActionId, entry.Skill.ParentActionId) : null;
+            var keybindActionId = entry.Skill.DisplayActionId != 0 ? entry.Skill.DisplayActionId : entry.Skill.ActionId;
+            var keybind = showKeybinds ? (keybindResolver.GetKeybind(keybindActionId, entry.Skill.ParentActionId) ?? keybindResolver.GetKeybind(entry.Skill.ActionId, entry.Skill.ParentActionId)) : null;
 
             if (entry.State == DisplayState.Ready)
             {

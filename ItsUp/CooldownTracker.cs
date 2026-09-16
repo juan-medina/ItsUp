@@ -24,6 +24,7 @@ namespace ItsUp
 
         public string Name { get; set; } = string.Empty;
         public uint IconId { get; set; }
+        public uint DisplayActionId { get; set; }
 
         public bool Available { get; set; }
         public float SecondsLeft { get; set; }
@@ -94,10 +95,12 @@ namespace ItsUp
 
                 foreach (var action in candidateActions)
                 {
-                    var info = _registry.ActionInfo.GetValueOrDefault(action.ActionId);
+                    var displayId = _registry.GetTraitUpgradedActionId(action.ActionId, (byte)(player?.Level ?? byte.MaxValue));
+                    var info = _registry.ActionInfo.GetValueOrDefault(displayId);
                     pool.Add(new()
                     {
                         ActionId = action.ActionId,
+                        DisplayActionId = displayId,
                         Name = info.Name,
                         IconId = info.Icon,
                         Settings = new AbilitySettings
@@ -161,19 +164,23 @@ namespace ItsUp
             // Remove skills we don't track anymore on this job
             _skills.RemoveAll(s => !currentTracked.ContainsKey(s.ActionId));
 
+            var player = Services.ObjectTable.LocalPlayer;
+            var level = (byte)(player?.Level ?? byte.MaxValue);
+
             // Add missing skills
             foreach (var (actionId, settings) in currentTracked)
             {
                 if (_skills.Exists(s => s.ActionId == actionId)) continue;
 
-                var skill = new TrackedSkill { ActionId = actionId, Settings = settings };
-                if (_registry.ActionInfo.TryGetValue(actionId, out var info))
+                var displayActionId = settings.IsFollowup ? actionId : _registry.GetTraitUpgradedActionId(actionId, level);
+                var skill = new TrackedSkill { ActionId = actionId, Settings = settings, DisplayActionId = displayActionId };
+                if (_registry.ActionInfo.TryGetValue(displayActionId, out var info))
                 {
                     skill.Name = info.Name;
                     skill.IconId = info.Icon;
                 }
 
-                Services.Logger.Debug($"Tracking skill {actionId} = \"{skill.Name}\" (icon {skill.IconId}) on job {_currentJobId}");
+                Services.Logger.Debug($"Tracking skill {actionId} (display {displayActionId}) = \"{skill.Name}\" (icon {skill.IconId}) on job {_currentJobId}");
                 _skills.Add(skill);
             }
         }
@@ -311,6 +318,15 @@ namespace ItsUp
             }
 
             var actionId = _registry.GetTraitUpgradedActionId(skill.ActionId, playerLevel);
+            if (skill.DisplayActionId != actionId)
+            {
+                skill.DisplayActionId = actionId;
+                if (_registry.ActionInfo.TryGetValue(actionId, out var info))
+                {
+                    skill.Name = info.Name;
+                    skill.IconId = info.Icon;
+                }
+            }
 
             var maxCharges = ActionManager.GetMaxCharges(actionId, playerLevel);
             if (maxCharges > 0)
