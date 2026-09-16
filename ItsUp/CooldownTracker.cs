@@ -302,29 +302,28 @@ namespace ItsUp
             }
         }
 
-        private static unsafe (bool IsUp, float SecondsRemaining) EvaluateAbility(ActionManager* am, byte playerLevel, TrackedSkill skill)
+        private unsafe (bool IsUp, float SecondsRemaining) EvaluateAbility(ActionManager* am, byte playerLevel, TrackedSkill skill)
         {
-            // 1. Follow-up / Proc ability
             if (skill.IsFollowup)
             {
                 var isUp = skill.ParentActionId > 0 && am->GetAdjustedActionId(skill.ParentActionId) == skill.ActionId;
                 return (isUp, 0f);
             }
 
-            // 2. Charge ability
-            var maxCharges = ActionManager.GetMaxCharges(skill.ActionId, playerLevel);
+            var actionId = _registry.GetTraitUpgradedActionId(skill.ActionId, playerLevel);
+
+            var maxCharges = ActionManager.GetMaxCharges(actionId, playerLevel);
             if (maxCharges > 0)
             {
-                var hasCharge = am->GetCurrentCharges(skill.ActionId) >= 1;
-                var total = am->GetRecastTime(ActionType.Action, skill.ActionId);
-                var elapsed = am->GetRecastTimeElapsed(ActionType.Action, skill.ActionId);
+                var hasCharge = am->GetCurrentCharges(actionId) >= 1;
+                var total = am->GetRecastTime(ActionType.Action, actionId);
+                var elapsed = am->GetRecastTimeElapsed(ActionType.Action, actionId);
                 return (hasCharge, Math.Max(0f, total - elapsed));
             }
 
-            // 3. Standard cooldown ability
-            var isReady = !am->IsRecastTimerActive(ActionType.Action, skill.ActionId);
-            var recastTotal = am->GetRecastTime(ActionType.Action, skill.ActionId);
-            var recastElapsed = am->GetRecastTimeElapsed(ActionType.Action, skill.ActionId);
+            var isReady = !am->IsRecastTimerActive(ActionType.Action, actionId);
+            var recastTotal = am->GetRecastTime(ActionType.Action, actionId);
+            var recastElapsed = am->GetRecastTimeElapsed(ActionType.Action, actionId);
             return (isReady, Math.Max(0f, recastTotal - recastElapsed));
         }
     }

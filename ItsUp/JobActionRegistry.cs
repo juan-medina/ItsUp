@@ -48,6 +48,8 @@ namespace ItsUp
         public FrozenDictionary<uint, List<ActionItem>> JobActions { get; }
         public FrozenDictionary<uint, (string Name, uint Icon)> ActionInfo { get; }
 
+        private readonly FrozenDictionary<uint, List<(byte Level, uint ActionId)>> _traitUpgrades;
+
         public JobActionRegistry()
         {
             var allActions = Services.DataManager.GetExcelSheet<Action>()!.ToList();
@@ -60,21 +62,30 @@ namespace ItsUp
             JobNames = Jobs.ToFrozenDictionary(job => job.RowId, job => textInfo.ToTitleCase(job.Name.ToString()));
             JobAbbreviations = Jobs.ToFrozenDictionary(job => job.RowId, job => job.Abbreviation.ToString());
 
-            JobActions = BuildAllJobActions(Jobs, allActions, ActionInfo);
+            var replacements = LoadReplacements(allActions);
+            _traitUpgrades = replacements.TraitUpgrades;
+            JobActions = BuildAllJobActions(Jobs, allActions, ActionInfo, replacements.FollowupsByParent, replacements.NonRootActions);
         }
+
+        private sealed record Replacements(
+            FrozenDictionary<uint, List<uint>> FollowupsByParent,
+            FrozenSet<uint> NonRootActions,
+            FrozenDictionary<uint, List<(byte Level, uint ActionId)>> TraitUpgrades);
 
         private static List<ClassJob> LoadPlayableCombatJobs() =>
             [.. Services.DataManager.GetExcelSheet<ClassJob>()!
                 .Where(job => job.Role > 0 && job.ItemSoulCrystal.Value.RowId > 0)
                 .OrderBy(job => job.Name.ToString(), StringComparer.Ordinal)];
 
-        private static (FrozenDictionary<uint, List<uint>> FollowupsByParent, FrozenSet<uint> NonRootActions) LoadReplacements()
+        private static Replacements LoadReplacements(List<Action> allActions)
         {
             var followupsByParent = new Dictionary<uint, List<uint>>();
+            var traitUpgrades = new Dictionary<uint, List<(byte Level, uint ActionId)>>();
             var nonRootActions = new HashSet<uint>();
+            var actionsById = allActions.ToDictionary(a => a.RowId);
             var replaceSheet = Services.DataManager.GetSubrowExcelSheet<ReplaceAction>();
             if (replaceSheet == null)
-                return (followupsByParent.ToFrozenDictionary(), nonRootActions.ToFrozenSet());
+                return new Replacements(followupsByParent.ToFrozenDictionary(), nonRootActions.ToFrozenSet(), traitUpgrades.ToFrozenDictionary());
 
             foreach (var subrowCollection in replaceSheet)
             {
@@ -98,7 +109,21 @@ namespace ItsUp
 
                         nonRootActions.Add(targetActionId);
 
-                        if (type != (sbyte)ReplacementType.TraitUpgrade && type != (sbyte)ReplacementType.None)
+                        if (type == (sbyte)ReplacementType.TraitUpgrade)
+                        {
+                            if (actionsById.TryGetValue(targetActionId, out var targetAction))
+                            {
+                                if (!traitUpgrades.TryGetValue(parentActionId, out var list))
+                                {
+                                    list = [];
+                                    traitUpgrades[parentActionId] = list;
+                                }
+
+                                if (!list.Exists(u => u.ActionId == targetActionId))
+                                    list.Add((targetAction.ClassJobLevel, targetActionId));
+                            }
+                        }
+                        else if (type != (sbyte)ReplacementType.None)
                         {
                             if (!followupsByParent.TryGetValue(parentActionId, out var list))
                             {
@@ -113,7 +138,7 @@ namespace ItsUp
                 }
             }
 
-            return (followupsByParent.ToFrozenDictionary(), nonRootActions.ToFrozenSet());
+            return new Replacements(followupsByParent.ToFrozenDictionary(), nonRootActions.ToFrozenSet(), traitUpgrades.ToFrozenDictionary());
         }
 
         private static FrozenDictionary<uint, FrozenSet<uint>> BuildJobEligibilityByCategory(IReadOnlyList<ClassJob> jobs)
@@ -147,10 +172,11 @@ namespace ItsUp
         private static FrozenDictionary<uint, List<ActionItem>> BuildAllJobActions(
             IReadOnlyList<ClassJob> jobs,
             List<Action> allActions,
-            FrozenDictionary<uint, (string Name, uint Icon)> actionInfo)
+            FrozenDictionary<uint, (string Name, uint Icon)> actionInfo,
+            FrozenDictionary<uint, List<uint>> followupsByParent,
+            FrozenSet<uint> nonRootActions)
         {
             var eligibleJobsByCategory = BuildJobEligibilityByCategory(jobs);
-            var (followupsByParent, nonRootActions) = LoadReplacements();
 
             var jobsByClassId = new Dictionary<uint, List<uint>>();
             var jobActionsByJob = new Dictionary<uint, List<uint>>();
@@ -247,6 +273,25 @@ namespace ItsUp
 
         public string NameOf(uint actionId) =>
             ActionInfo.TryGetValue(actionId, out var info) && info.Name.Length > 0 ? info.Name : $"#{actionId}";
+
+        public uint GetTraitUpgradedActionId(uint baseActionId, byte playerLevel)
+        {
+            if (!_traitUpgrades.TryGetValue(baseActionId, out var upgrades))
+                return baseActionId;
+
+            var best = baseActionId;
+            byte highestLevel = 0;
+            foreach (var (level, upgradedId) in upgrades)
+            {
+                if (playerLevel >= level && level >= highestLevel)
+                {
+                    highestLevel = level;
+                    best = upgradedId;
+                }
+            }
+
+            return best;
+        }
 
         public string GetJobDisplayName(uint jobId)
         {
