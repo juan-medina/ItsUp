@@ -8,6 +8,7 @@ using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Lumina.Excel.Sheets;
+using TerritoryIntendedUse = FFXIVClientStructs.FFXIV.Client.Enums.TerritoryIntendedUse;
 
 namespace ItsUp.Windows
 {
@@ -122,8 +123,11 @@ namespace ItsUp.Windows
             if (territoryId == 0) return;
 
             var territory = Services.DataManager.GetExcelSheet<TerritoryType>()?.GetRow(territoryId);
-            var intendedUse = territory?.TerritoryIntendedUse.RowId ?? 0;
-            _isFieldOperationOrSoloDuty = intendedUse is 26 or 29 or 15 or 9;
+            var intendedUse = (TerritoryIntendedUse)(territory?.TerritoryIntendedUse.RowId ?? 0);
+            _isFieldOperationOrSoloDuty = intendedUse is TerritoryIntendedUse.ExploratoryMissions
+                                                     or TerritoryIntendedUse.SoloDuty
+                                                     or TerritoryIntendedUse.SoloOverworldInstances
+                                                     or TerritoryIntendedUse.PreEwOverworldQuestBattle;
         }
 
         private void OnCloseToUp(TrackedSkill skill, float secondsLeft)
